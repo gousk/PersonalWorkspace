@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -18,8 +18,16 @@
       <button class="g-nav-btn" data-page="notes" onclick="navigateTo('notes')">Notes</button>
       <button class="g-nav-btn" data-page="blog" onclick="navigateTo('blog')">Blog</button>
       <button class="g-nav-btn" data-page="gallery" onclick="navigateTo('gallery')">Gallery</button>
+      <button class="g-nav-btn" data-page="calendar" onclick="navigateTo('calendar')">Calendar</button>
     </div>
-    <span class="g-clock" id="g-clock"></span>
+    <div class="g-tools">
+      <button class="g-tool-btn" onclick="openGlobalSearch()">Search</button>
+      <button class="g-tool-btn" onclick="WSBackup.exportAll()">Backup</button>
+      <label class="g-tool-btn g-tool-label">Restore
+        <input id="restore-input" type="file" accept="application/json" onchange="WSBackup.importAll(event)">
+      </label>
+      <span class="g-clock" id="g-clock"></span>
+    </div>
   </div>
 
   <!-- HOME -->
@@ -36,6 +44,9 @@
 
   <!-- GALLERY -->
   <div id="page-gallery" class="hidden" style="display:flex;flex-direction:column;flex:1;"></div>
+
+  <!-- CALENDAR -->
+  <div id="page-calendar" class="hidden" style="display:flex;flex-direction:column;flex:1;"></div>
 </div>
 
 <!-- Backlog panel -->
@@ -56,12 +67,23 @@
   <div class="modal-foot" id="modal-foot"><button class="fb btn-c" onclick="closeModal()">Cancel</button><button class="fb btn-s" id="modal-save-btn" onclick="modalConfirm()">Save</button></div></div>
 </div>
 
+<div id="gs-overlay" class="gs-overlay hidden" onclick="if(event.target===this)closeGlobalSearch()">
+  <div class="gs-panel" onclick="event.stopPropagation()">
+    <div class="gs-head">
+      <input id="gs-input" class="gs-input" type="text" placeholder="Search everything... (title, text, tags)" oninput="runGlobalSearch(this.value)">
+      <button class="gs-close" onclick="closeGlobalSearch()">&#215;</button>
+    </div>
+    <div id="gs-tags" class="gs-tags"></div>
+    <div id="gs-results" class="gs-results"></div>
+  </div>
+</div>
+
 <script src="scripts/core.js" defer></script>
 <script src="scripts/apps/backlog.js" defer></script>
 <script src="scripts/apps/notes.js" defer></script>
 <script src="scripts/apps/blog.js" defer></script>
 <script src="scripts/apps/gallery.js" defer></script>
+<script src="scripts/apps/calendar.js" defer></script>
 <script src="scripts/main.js" defer></script>
 </body>
 </html>
-

@@ -1,42 +1,86 @@
-﻿// â•â•â•â•â•â•â• UTILS â•â•â•â•â•â•â•
-const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-function esc(s){const e=document.createElement('span');e.textContent=s;return e.innerHTML;}
-let modalCb=null;
-function openModal(title,val,cb){
-  modalCb=cb;document.getElementById('modal-title').textContent=title;
-  const body=document.getElementById('modal-body');
-  body.innerHTML=`<input class="modal-input" type="text" id="modal-input" placeholder="Name..." onkeydown="if(event.key==='Enter')modalConfirm();if(event.key==='Escape')closeModal()">`;
-  document.getElementById('modal-input').value=val;
-  document.getElementById('modal-save-btn').style.display='';
-  document.getElementById('modal-overlay').classList.remove('hidden');
-  setTimeout(()=>document.getElementById('modal-input').focus(),50);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+function esc(s) {
+  const e = document.createElement('span');
+  e.textContent = s == null ? '' : String(s);
+  return e.innerHTML;
 }
-function closeModal(){document.getElementById('modal-overlay').classList.add('hidden');modalCb=null;window._cmRender=null;document.getElementById('modal-save-btn').style.display='';}
-function modalConfirm(){const inp=document.getElementById('modal-input');if(modalCb&&inp)modalCb(inp.value);closeModal();}
-function closeLightbox(){
-  const lb=document.getElementById('lightbox');
-  const img=document.getElementById('lb-img');
-  const vid=document.getElementById('lb-video');
-  const meta=document.getElementById('lb-meta');
-  if(vid){
+
+let modalCb = null;
+function openCustomModal(title, bodyHtml, cb, options = {}) {
+  modalCb = cb;
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-body').innerHTML = bodyHtml;
+  const saveBtn = document.getElementById('modal-save-btn');
+  saveBtn.textContent = options.saveLabel || 'Save';
+  saveBtn.style.display = options.showSave === false ? 'none' : '';
+  document.getElementById('modal-overlay').classList.remove('hidden');
+}
+function openModal(title, val, cb) {
+  const body = `<input class="modal-input" type="text" id="modal-input" placeholder="Name..." onkeydown="if(event.key==='Enter')modalConfirm();if(event.key==='Escape')closeModal()">`;
+  openCustomModal(title, body, () => {
+    const input = document.getElementById('modal-input');
+    return cb ? cb(input ? input.value : '') : true;
+  });
+  const input = document.getElementById('modal-input');
+  if (input) {
+    input.value = val || '';
+    setTimeout(() => input.focus(), 50);
+  }
+}
+function closeModal() {
+  document.getElementById('modal-overlay').classList.add('hidden');
+  modalCb = null;
+  window._cmRender = null;
+  const saveBtn = document.getElementById('modal-save-btn');
+  saveBtn.textContent = 'Save';
+  saveBtn.style.display = '';
+}
+function modalConfirm() {
+  if (!modalCb) {
+    closeModal();
+    return;
+  }
+  const keepOpen = modalCb();
+  if (keepOpen === false) return;
+  closeModal();
+}
+
+function closeLightbox() {
+  const lb = document.getElementById('lightbox');
+  const img = document.getElementById('lb-img');
+  const vid = document.getElementById('lb-video');
+  const meta = document.getElementById('lb-meta');
+  if (vid) {
     vid.pause();
     vid.removeAttribute('src');
     vid.classList.add('hidden');
     vid.load();
   }
-  if(img){
+  if (img) {
     img.removeAttribute('src');
     img.classList.remove('hidden');
   }
-  if(meta)meta.innerHTML='';
-  if(lb)lb.classList.add('hidden');
-  if(window.GL&&typeof window.GL.clearOpenState==='function')window.GL.clearOpenState();
+  if (meta) meta.innerHTML = '';
+  if (lb) lb.classList.add('hidden');
+  if (window.GL && typeof window.GL.clearOpenState === 'function') window.GL.clearOpenState();
 }
-function updateClock(){document.getElementById('g-clock').textContent=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});}
-updateClock();setInterval(updateClock,1000);
-function getGreeting(){const h=new Date().getHours();if(h<6)return'Good night';if(h<12)return'Good morning';if(h<18)return'Good afternoon';return'Good evening';}
 
-// â•â•â•â•â•â•â• ASCII BG â•â•â•â•â•â•â•
+function updateClock() {
+  document.getElementById('g-clock').textContent = new Date().toLocaleTimeString('en-GB', {
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  });
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+function getGreeting() {
+  const h = new Date().getHours();
+  if (h < 6) return 'Good night';
+  if (h < 12) return 'Good morning';
+  if (h < 18) return 'Good afternoon';
+  return 'Good evening';
+}
+
 const cvs=document.getElementById('ascii-bg'),cx=cvs.getContext('2d');let mX=-1,mY=-1;const CW=12,CH=20;
 function initCanvas(){cvs.width=window.innerWidth;cvs.height=window.innerHeight;}
 function noise(x,y,t){return Math.sin(x*.08+t)*.4+Math.sin(y*.06-t*.7)*.3+Math.sin((x+y)*.05+t*.5)*.2+Math.sin(x*.12-y*.1+t*.3)*.15;}
@@ -57,68 +101,317 @@ function drawBg(time){
 window.addEventListener('resize',initCanvas);window.addEventListener('mousemove',e=>{mX=e.clientX;mY=e.clientY;});window.addEventListener('mouseleave',()=>{mX=-1;mY=-1;});
 initCanvas();requestAnimationFrame(drawBg);
 
-// â•â•â•â•â•â•â• NAVIGATION â•â•â•â•â•â•â•
-let currentPage='home';
-function navigateTo(page){
-  currentPage=page;
-  ['home','backlog','notes','blog','gallery'].forEach(p=>{
-    const el=document.getElementById('page-'+p);
-    if(p===page){el.classList.remove('hidden');el.style.display='flex';}
-    else{el.classList.add('hidden');}
+
+let currentPage = 'home';
+function navigateTo(page) {
+  currentPage = page;
+  ['home', 'backlog', 'notes', 'blog', 'gallery', 'calendar'].forEach(p => {
+    const el = document.getElementById('page-' + p);
+    if (!el) return;
+    if (p === page) {
+      el.classList.remove('hidden');
+      el.style.display = 'flex';
+    } else {
+      el.classList.add('hidden');
+    }
   });
-  document.querySelectorAll('.g-nav-btn').forEach(b=>{b.classList.toggle('active',b.dataset.page===page);});
-  if(page==='home')renderHome();
-  if(page==='backlog')BL.init();
-  if(page==='notes')NT.init();
-  if(page==='blog')BG.init();
-  if(page==='gallery')GL.init();
+  document.querySelectorAll('.g-nav-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.page === page);
+  });
+  if (page === 'home') renderHome();
+  if (page === 'backlog') BL.init();
+  if (page === 'notes') NT.init();
+  if (page === 'blog') BG.init();
+  if (page === 'gallery') GL.init();
+  if (page === 'calendar') CL.init();
 }
 
-// â•â•â•â•â•â•â• HOME â•â•â•â•â•â•â•
-function renderHome(){
-  const blData=JSON.parse(localStorage.getItem('ws_backlog')||'null');
-  const ntData=JSON.parse(localStorage.getItem('ws_notes')||'null');
-  const bgData=JSON.parse(localStorage.getItem('ws_blog')||'null');
-  const glData=JSON.parse(localStorage.getItem('ws_gallery')||'null');
-  const blCount=blData?blData.boards.reduce((s,b)=>s+b.tasks.length,0):0;
-  const ntCount=ntData?ntData.notes.length:0;
-  const bgCount=bgData?bgData.posts.length:0;
-  const glCount=glData&&Array.isArray(glData.items)?glData.items.length:0;
-  document.getElementById('page-home').innerHTML=`
+function parseLS(key, fallback) {
+  try {
+    const v = JSON.parse(localStorage.getItem(key) || 'null');
+    return v == null ? fallback : v;
+  } catch {
+    return fallback;
+  }
+}
+function parseTags(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map(x => String(x).trim().toLowerCase()).filter(Boolean);
+  return String(raw)
+    .split(',')
+    .map(x => x.trim().toLowerCase())
+    .filter(Boolean);
+}
+function eventTs(ev) {
+  if (!ev || !ev.date) return null;
+  const raw = `${ev.date}T${ev.time || '23:59'}`;
+  const ts = Date.parse(raw);
+  return Number.isFinite(ts) ? ts : null;
+}
+
+function buildGlobalIndex() {
+  const items = [];
+  const backlog = parseLS('ws_backlog', { boards: [] });
+  const notes = parseLS('ws_notes', { notes: [] });
+  const blog = parseLS('ws_blog', { posts: [] });
+  const gallery = parseLS('ws_gallery', { items: [] });
+  const calendar = parseLS('ws_calendar', { events: [] });
+
+  (backlog.boards || []).forEach(board => {
+    (board.tasks || []).forEach(task => {
+      items.push({
+        app: 'backlog',
+        itemId: task.id,
+        title: task.title || 'Untitled task',
+        snippet: `${board.name || ''} ${(task.notes || '').slice(0, 180)}`.trim(),
+        tags: [task.tag].filter(Boolean),
+        date: task.due ? Date.parse(`${task.due}T12:00`) : Date.now(),
+        page: 'backlog',
+        boardId: board.id
+      });
+    });
+  });
+
+  (notes.notes || []).forEach(note => {
+    items.push({
+      app: 'notes',
+      itemId: note.id,
+      title: note.title || 'Untitled note',
+      snippet: (note.body || '').replace(/\n/g, ' ').slice(0, 220),
+      tags: parseTags(note.tags),
+      date: note.updated || note.created || Date.now(),
+      page: 'notes'
+    });
+  });
+
+  (blog.posts || []).forEach(post => {
+    const text = (post.blocks || []).map(b => b.content || '').join(' ').slice(0, 220);
+    items.push({
+      app: 'blog',
+      itemId: post.id,
+      title: post.title || 'Untitled post',
+      snippet: text,
+      tags: parseTags(post.tags),
+      date: post.updated || post.created || Date.now(),
+      page: 'blog'
+    });
+  });
+
+  (gallery.items || []).forEach(media => {
+    items.push({
+      app: 'gallery',
+      itemId: media.id,
+      title: media.title || 'Untitled media',
+      snippet: media.caption || '',
+      tags: parseTags(media.tags),
+      date: media.updated || media.created || Date.now(),
+      page: 'gallery'
+    });
+  });
+
+  (calendar.events || []).forEach(ev => {
+    items.push({
+      app: 'calendar',
+      itemId: ev.id,
+      title: ev.title || 'Untitled reminder',
+      snippet: ev.notes || '',
+      tags: parseTags(ev.tags),
+      date: eventTs(ev) || ev.updated || Date.now(),
+      page: 'calendar'
+    });
+  });
+
+  return items;
+}
+
+let gsTag = '';
+let gsCache = {};
+function collectGlobalTags() {
+  const map = new Map();
+  buildGlobalIndex().forEach(item => {
+    item.tags.forEach(tag => map.set(tag, (map.get(tag) || 0) + 1));
+  });
+  return [...map.entries()].sort((a, b) => b[1] - a[1]);
+}
+function renderGlobalTagFilters() {
+  const tags = collectGlobalTags().slice(0, 16);
+  const html = ['<button class="gs-tag-btn' + (gsTag ? '' : ' active') + '" onclick="selectGlobalTag(\'\')">All</button>']
+    .concat(tags.map(([tag]) => `<button class="gs-tag-btn${gsTag === tag ? ' active' : ''}" onclick="selectGlobalTag(decodeURIComponent('${encodeURIComponent(tag)}'))">#${esc(tag)}</button>`))
+    .join('');
+  document.getElementById('gs-tags').innerHTML = html;
+}
+function selectGlobalTag(tag) {
+  gsTag = tag || '';
+  renderGlobalTagFilters();
+  const input = document.getElementById('gs-input');
+  runGlobalSearch(input ? input.value : '');
+}
+function openGlobalSearch(prefill = '') {
+  gsTag = '';
+  document.getElementById('gs-overlay').classList.remove('hidden');
+  const input = document.getElementById('gs-input');
+  input.value = prefill;
+  renderGlobalTagFilters();
+  runGlobalSearch(prefill);
+  setTimeout(() => input.focus(), 20);
+}
+function closeGlobalSearch() {
+  document.getElementById('gs-overlay').classList.add('hidden');
+  gsCache = {};
+}
+function runGlobalSearch(term) {
+  const q = (term || '').trim().toLowerCase();
+  const resultsEl = document.getElementById('gs-results');
+  const all = buildGlobalIndex();
+  const filtered = all.filter(item => {
+    if (gsTag && !item.tags.includes(gsTag)) return false;
+    if (!q) return true;
+    const hay = `${item.title} ${item.snippet} ${item.tags.join(' ')} ${item.app}`.toLowerCase();
+    return hay.includes(q);
+  }).sort((a, b) => (b.date || 0) - (a.date || 0)).slice(0, 80);
+
+  if (!filtered.length) {
+    resultsEl.innerHTML = '<div class="gs-empty">No results found.</div>';
+    return;
+  }
+
+  gsCache = {};
+  resultsEl.innerHTML = filtered.map((item, i) => {
+    const id = `r${i}_${item.app}_${item.itemId}`;
+    gsCache[id] = item;
+    const tags = item.tags.slice(0, 4).map(t => `<span>#${esc(t)}</span>`).join('');
+    return `<button class="gs-item" onclick="globalSearchOpenResult('${id}')"><div class="gs-item-top"><span class="gs-app">${item.app}</span><span class="gs-date">${new Date(item.date || Date.now()).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span></div><div class="gs-title">${esc(item.title)}</div><div class="gs-snippet">${esc(item.snippet || '')}</div><div class="gs-tags-row">${tags}</div></button>`;
+  }).join('');
+}
+function globalSearchOpenResult(id) {
+  const item = gsCache[id];
+  if (!item) return;
+  closeGlobalSearch();
+  navigateTo(item.page);
+  setTimeout(() => {
+    if (item.app === 'backlog' && window.BL && BL.openFromSearch) BL.openFromSearch(item.itemId, item.boardId);
+    if (item.app === 'notes' && window.NT && NT.openFromSearch) NT.openFromSearch(item.itemId);
+    if (item.app === 'blog' && window.BG && BG.openFromSearch) BG.openFromSearch(item.itemId);
+    if (item.app === 'gallery' && window.GL && GL.openFromSearch) GL.openFromSearch(item.itemId);
+    if (item.app === 'calendar' && window.CL && CL.openFromSearch) CL.openFromSearch(item.itemId);
+  }, 60);
+}
+
+const WSBackup = {
+  exportAll() {
+    const keys = ['ws_backlog', 'ws_notes', 'ws_blog', 'ws_gallery', 'ws_calendar'];
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      data: {}
+    };
+    keys.forEach(key => {
+      payload.data[key] = parseLS(key, null);
+    });
+    const text = JSON.stringify(payload, null, 2);
+    const blob = new Blob([text], { type: 'application/json' });
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `workspace-backup-${stamp}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    localStorage.setItem('ws_last_backup', String(Date.now()));
+    if (currentPage === 'home') renderHome();
+  },
+  importAll(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const payload = JSON.parse(e.target.result);
+        if (!payload || typeof payload !== 'object' || !payload.data) {
+          alert('Invalid backup file.');
+          return;
+        }
+        if (!confirm('Restore backup now? Current local data will be replaced.')) return;
+        Object.keys(payload.data).forEach(key => {
+          localStorage.setItem(key, JSON.stringify(payload.data[key]));
+        });
+        localStorage.setItem('ws_last_restore', String(Date.now()));
+        navigateTo(currentPage);
+      } catch {
+        alert('Backup file could not be read.');
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+  }
+};
+
+function renderHome() {
+  const blData = parseLS('ws_backlog', { boards: [] });
+  const ntData = parseLS('ws_notes', { notes: [] });
+  const bgData = parseLS('ws_blog', { posts: [] });
+  const glData = parseLS('ws_gallery', { items: [] });
+  const clData = parseLS('ws_calendar', { events: [] });
+
+  const blCount = (blData.boards || []).reduce((s, b) => s + ((b.tasks || []).length), 0);
+  const ntCount = (ntData.notes || []).length;
+  const bgCount = (bgData.posts || []).length;
+  const glCount = (glData.items || []).length;
+  const clCount = (clData.events || []).filter(e => !e.done).length;
+
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const upcoming = (clData.events || [])
+    .filter(e => !e.done)
+    .map(e => ({ ...e, ts: eventTs(e) }))
+    .filter(e => e.ts && e.ts >= todayStart.getTime())
+    .sort((a, b) => a.ts - b.ts)
+    .slice(0, 5);
+
+  const tagSummary = collectGlobalTags().slice(0, 8)
+    .map(([tag, count]) => `<span class="home-tag-chip">#${esc(tag)} <strong>${count}</strong></span>`)
+    .join('');
+
+  const backupAt = Number(localStorage.getItem('ws_last_backup') || 0);
+  const backupText = backupAt ? new Date(backupAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'No backup yet';
+
+  document.getElementById('page-home').innerHTML = `
     <div class="home-greeting">${getGreeting()}</div>
-    <div class="home-sub">${new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</div>
+    <div class="home-sub">${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</div>
     <div class="home-grid">
-      <div class="home-tile" onclick="navigateTo('backlog')">
-        <div class="home-tile-stat">${blCount} items</div>
-        <div class="home-tile-name">Backlog</div>
-        <div class="home-tile-desc">Track games, books, shows, tasks and everything in between with boards and columns.</div>
+      <div class="home-tile" onclick="navigateTo('backlog')"><div class="home-tile-stat">${blCount} items</div><div class="home-tile-name">Backlog</div><div class="home-tile-desc">Track tasks with boards, priorities, due dates and progress.</div></div>
+      <div class="home-tile" onclick="navigateTo('notes')"><div class="home-tile-stat">${ntCount} notes</div><div class="home-tile-name">Notes</div><div class="home-tile-desc">Quick capture with tags, pinning and better filtering.</div></div>
+      <div class="home-tile" onclick="navigateTo('blog')"><div class="home-tile-stat">${bgCount} posts</div><div class="home-tile-name">Blog</div><div class="home-tile-desc">Block-based writing with search and editorial controls.</div></div>
+      <div class="home-tile" onclick="navigateTo('gallery')"><div class="home-tile-stat">${glCount} media</div><div class="home-tile-name">Gallery</div><div class="home-tile-desc">Stacked media board for images, gifs and videos.</div></div>
+      <div class="home-tile" onclick="navigateTo('calendar')"><div class="home-tile-stat">${clCount} open</div><div class="home-tile-name">Calendar</div><div class="home-tile-desc">Plan events and reminders with upcoming visibility.</div></div>
+    </div>
+    <div class="home-widgets">
+      <div class="home-widget">
+        <div class="home-widget-title">Upcoming Reminders</div>
+        <div class="home-widget-body">${upcoming.length ? upcoming.map(ev => `<div class="home-widget-row"><span>${esc(ev.title)}</span><span>${new Date(ev.ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span></div>`).join('') : '<div class="home-widget-empty">No upcoming reminders</div>'}</div>
       </div>
-      <div class="home-tile" onclick="navigateTo('notes')">
-        <div class="home-tile-stat">${ntCount} notes</div>
-        <div class="home-tile-name">Notes</div>
-        <div class="home-tile-desc">Quick capture for thoughts, ideas, snippets and anything on your mind.</div>
+      <div class="home-widget">
+        <div class="home-widget-title">Top Tags</div>
+        <div class="home-widget-tags">${tagSummary || '<div class="home-widget-empty">No tags yet</div>'}</div>
       </div>
-      <div class="home-tile" onclick="navigateTo('blog')">
-        <div class="home-tile-stat">${bgCount} posts</div>
-        <div class="home-tile-name">Blog</div>
-        <div class="home-tile-desc">Write rich posts with headings, images, quotes and code blocks in a block-based editor.</div>
-      </div>
-      <div class="home-tile" onclick="navigateTo('gallery')">
-        <div class="home-tile-stat">${glCount} images</div>
-        <div class="home-tile-name">Gallery</div>
-        <div class="home-tile-desc">Collect photos, star favorites, and open any image in fullscreen view.</div>
+      <div class="home-widget">
+        <div class="home-widget-title">Data Safety</div>
+        <div class="home-widget-body"><div class="home-widget-row"><span>Last backup</span><span>${backupText}</span></div><div class="home-widget-row"><span>Storage</span><span>Local first</span></div><button class="home-widget-action" onclick="WSBackup.exportAll()">Create Backup</button></div>
       </div>
     </div>`;
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-
 window.uid = uid;
 window.esc = esc;
 window.openModal = openModal;
+window.openCustomModal = openCustomModal;
 window.closeModal = closeModal;
 window.modalConfirm = modalConfirm;
 window.closeLightbox = closeLightbox;
 window.navigateTo = navigateTo;
 window.renderHome = renderHome;
-
+window.openGlobalSearch = openGlobalSearch;
+window.closeGlobalSearch = closeGlobalSearch;
+window.runGlobalSearch = runGlobalSearch;
+window.globalSearchOpenResult = globalSearchOpenResult;
+window.selectGlobalTag = selectGlobalTag;
+window.WSBackup = WSBackup;
