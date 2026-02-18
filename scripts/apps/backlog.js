@@ -10,7 +10,16 @@ const BL = (function () {
   let draggedId = null;
 
   function load() { try { return JSON.parse(localStorage.getItem(SK)) || null; } catch { return null; } }
-  function save() { localStorage.setItem(SK, JSON.stringify(data)); }
+  function save() {
+    if (window.WSStorage) return WSStorage.setJSON(SK, data);
+    try {
+      localStorage.setItem(SK, JSON.stringify(data));
+      return true;
+    } catch {
+      alert('Could not save backlog data. Storage may be full.');
+      return false;
+    }
+  }
 
   function ensureTaskDefaults(task, fallbackColId) {
     if (!task.notes) task.notes = '';
@@ -340,7 +349,7 @@ const BL = (function () {
     const t = getTask(curTask);
     const el = document.getElementById('bl-p-checklist');
     if (!t || !el) { if (el) el.innerHTML = ''; return; }
-    el.innerHTML = t.checklist.map(c => `<div class="bl-check-item"><button class="bl-check-box ${c.done ? 'checked' : ''}" onclick="BL.toggleCheck('${c.id}')">${c.done ? '?' : ''}</button><input class="bl-check-text ${c.done ? 'done' : ''}" value="${esc(c.text)}" onchange="BL.updateCheckText('${c.id}',this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();BL.addCheckItem();}"><button class="bl-check-del" onclick="BL.deleteCheck('${c.id}')">&#215;</button></div>`).join('');
+    el.innerHTML = t.checklist.map(c => `<div class="bl-check-item"><button class="bl-check-box ${c.done ? 'checked' : ''}" onclick="BL.toggleCheck('${c.id}')">${c.done ? '&#10003;' : ''}</button><input class="bl-check-text ${c.done ? 'done' : ''}" value="${esc(c.text)}" onchange="BL.updateCheckText('${c.id}',this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();BL.addCheckItem();}"><button class="bl-check-del" onclick="BL.deleteCheck('${c.id}')">&#215;</button></div>`).join('');
   }
   function addCheckItem() { const t = getTask(curTask); if (!t) return; t.checklist.push({ id: uid(), text: '', done: false }); save(); renderChecklist(); const items = document.querySelectorAll('#bl-p-checklist .bl-check-text'); if (items.length) items[items.length - 1].focus(); }
   function toggleCheck(id) { const t = getTask(curTask); const c = t.checklist.find(x => x.id === id); if (c) { c.done = !c.done; save(); renderChecklist(); } }

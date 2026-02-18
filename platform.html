@@ -11,19 +11,20 @@
 <canvas id="ascii-bg"></canvas>
 <div class="app-wrap">
   <div class="g-header">
-    <div class="g-logo" onclick="navigateTo('home')">Workspace</div>
+    <div class="g-logo" role="button" tabindex="0" title="Go to Home" onclick="navigateTo('home')" onkeydown="if(event.key==='Enter' || event.key===' '){event.preventDefault();navigateTo('home')}">Workspace</div>
     <div class="g-nav" id="g-nav">
-      <button class="g-nav-btn active" data-page="home" onclick="navigateTo('home')">Home</button>
-      <button class="g-nav-btn" data-page="backlog" onclick="navigateTo('backlog')">Backlog</button>
-      <button class="g-nav-btn" data-page="notes" onclick="navigateTo('notes')">Notes</button>
-      <button class="g-nav-btn" data-page="blog" onclick="navigateTo('blog')">Blog</button>
-      <button class="g-nav-btn" data-page="gallery" onclick="navigateTo('gallery')">Gallery</button>
-      <button class="g-nav-btn" data-page="calendar" onclick="navigateTo('calendar')">Calendar</button>
+      <button class="g-nav-btn active" data-page="home" title="Home (Alt+1)" onclick="navigateTo('home')">Home</button>
+      <button class="g-nav-btn" data-page="backlog" title="Backlog (Alt+2)" onclick="navigateTo('backlog')">Backlog</button>
+      <button class="g-nav-btn" data-page="notes" title="Notes (Alt+3)" onclick="navigateTo('notes')">Notes</button>
+      <button class="g-nav-btn" data-page="blog" title="Blog (Alt+4)" onclick="navigateTo('blog')">Blog</button>
+      <button class="g-nav-btn" data-page="gallery" title="Gallery (Alt+5)" onclick="navigateTo('gallery')">Gallery</button>
+      <button class="g-nav-btn" data-page="calendar" title="Calendar (Alt+6)" onclick="navigateTo('calendar')">Calendar</button>
+      <button class="g-nav-btn" data-page="health" title="Health (Alt+7)" onclick="navigateTo('health')">Health</button>
     </div>
     <div class="g-tools">
-      <button class="g-tool-btn" onclick="openGlobalSearch()">Search</button>
-      <button class="g-tool-btn" onclick="WSBackup.exportAll()">Backup</button>
-      <label class="g-tool-btn g-tool-label">Restore
+      <button class="g-tool-btn" title="Search (Ctrl+K)" onclick="openGlobalSearch()">Search</button>
+      <button class="g-tool-btn" title="Download local backup" onclick="WSBackup.exportAll()">Backup</button>
+      <label class="g-tool-btn g-tool-label" title="Restore from backup file">Restore
         <input id="restore-input" type="file" accept="application/json" onchange="WSBackup.importAll(event)">
       </label>
       <span class="g-clock" id="g-clock"></span>
@@ -47,6 +48,9 @@
 
   <!-- CALENDAR -->
   <div id="page-calendar" class="hidden" style="display:flex;flex-direction:column;flex:1;"></div>
+
+  <!-- HEALTH -->
+  <div id="page-health" class="hidden" style="display:flex;flex-direction:column;flex:1;"></div>
 </div>
 
 <!-- Backlog panel -->
@@ -62,7 +66,7 @@
 </div>
 
 <div id="modal-overlay" class="modal-overlay hidden" onclick="if(event.target===this)closeModal()">
-  <div class="modal"><div class="modal-head"><div class="modal-title" id="modal-title"></div><button class="modal-x" onclick="closeModal()">&#215;</button></div>
+  <div class="modal"><div class="modal-head"><div class="modal-title" id="modal-title"></div><button class="modal-x" aria-label="Close dialog" onclick="closeModal()">&#215;</button></div>
   <div class="modal-body" id="modal-body"></div>
   <div class="modal-foot" id="modal-foot"><button class="fb btn-c" onclick="closeModal()">Cancel</button><button class="fb btn-s" id="modal-save-btn" onclick="modalConfirm()">Save</button></div></div>
 </div>
@@ -71,7 +75,7 @@
   <div class="gs-panel" onclick="event.stopPropagation()">
     <div class="gs-head">
       <input id="gs-input" class="gs-input" type="text" placeholder="Search everything... (title, text, tags)" oninput="runGlobalSearch(this.value)">
-      <button class="gs-close" onclick="closeGlobalSearch()">&#215;</button>
+      <button class="gs-close" aria-label="Close search" onclick="closeGlobalSearch()">&#215;</button>
     </div>
     <div id="gs-tags" class="gs-tags"></div>
     <div id="gs-results" class="gs-results"></div>
@@ -84,6 +88,7 @@
 <script src="scripts/apps/blog.js" defer></script>
 <script src="scripts/apps/gallery.js" defer></script>
 <script src="scripts/apps/calendar.js" defer></script>
+<script src="scripts/apps/health.js" defer></script>
 <script src="scripts/main.js" defer></script>
 </body>
 </html>

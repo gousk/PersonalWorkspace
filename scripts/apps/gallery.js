@@ -17,7 +17,14 @@ const GL = (function () {
     }
   }
   function save() {
-    localStorage.setItem(SK, JSON.stringify(data));
+    if (window.WSStorage) return WSStorage.setJSON(SK, data);
+    try {
+      localStorage.setItem(SK, JSON.stringify(data));
+      return true;
+    } catch {
+      alert('Could not save gallery data. Storage may be full.');
+      return false;
+    }
   }
   function ensure() {
     if (!data || !Array.isArray(data.items)) {

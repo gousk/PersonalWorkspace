@@ -13,7 +13,14 @@ const NT = (function () {
     }
   }
   function save() {
-    localStorage.setItem(SK, JSON.stringify(data));
+    if (window.WSStorage) return WSStorage.setJSON(SK, data);
+    try {
+      localStorage.setItem(SK, JSON.stringify(data));
+      return true;
+    } catch {
+      alert('Could not save notes data. Storage may be full.');
+      return false;
+    }
   }
   function tagsOf(note) {
     return String(note.tags || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);

@@ -1,5 +1,6 @@
 const CL = (function () {
   const SK = 'ws_calendar';
+  const PRE_OPTS = [0, 1, 5, 10, 30];
   let data;
   let viewDate = new Date();
   let filterMode = 'open';
@@ -12,9 +13,15 @@ const CL = (function () {
       return null;
     }
   }
+
   function save() {
-    localStorage.setItem(SK, JSON.stringify(data));
+    if (window.WSStorage) WSStorage.setJSON(SK, data, { silent: true });
+    else localStorage.setItem(SK, JSON.stringify(data));
+    if (window.WSReminders && typeof window.WSReminders.checkNow === 'function') {
+      window.WSReminders.checkNow();
+    }
   }
+
   function ensure() {
     if (!data || !Array.isArray(data.events)) {
       data = {
@@ -27,6 +34,7 @@ const CL = (function () {
             notes: 'Review backlog and notes for next week.',
             tags: 'planning,weekly',
             remindDays: 1,
+            preReminderMin: 5,
             done: false,
             created: Date.now(),
             updated: Date.now()
@@ -35,12 +43,15 @@ const CL = (function () {
       };
       save();
     }
+
     data.events.forEach(ev => {
       if (ev.tags == null) ev.tags = '';
       if (ev.notes == null) ev.notes = '';
       if (ev.remindDays == null || Number.isNaN(Number(ev.remindDays))) ev.remindDays = 0;
+      if (ev.preReminderMin == null || Number.isNaN(Number(ev.preReminderMin))) ev.preReminderMin = 0;
       if (ev.done == null) ev.done = false;
     });
+
     save();
   }
 
@@ -48,6 +59,26 @@ const CL = (function () {
     if (!ev || !ev.date) return null;
     const ts = Date.parse(`${ev.date}T${ev.time || '23:59'}`);
     return Number.isFinite(ts) ? ts : null;
+  }
+
+  function mainReminderTs(ev) {
+    const base = eventTs(ev);
+    if (!base) return null;
+    return base - Math.max(0, Number(ev.remindDays || 0)) * 24 * 60 * 60 * 1000;
+  }
+
+  function reminderMeta(ev) {
+    const main = mainReminderTs(ev);
+    const preMin = Math.max(0, Number(ev.preReminderMin || 0));
+    const mainLabel = main
+      ? new Date(main).toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: ev.time ? '2-digit' : undefined,
+          minute: ev.time ? '2-digit' : undefined
+        })
+      : 'N/A';
+    return preMin > 0 ? `Main ${mainLabel} • + pre ${preMin}m` : `Main ${mainLabel}`;
   }
 
   function init() {
@@ -134,10 +165,26 @@ const CL = (function () {
     const doneCount = data.events.filter(x => x.done).length;
     const upcomingCount = data.events.filter(x => !x.done && (eventTs(x) || 0) >= Date.now()).length;
 
-    const cards = events.map(ev => {
-      const dateLabel = ev.ts ? new Date(ev.ts).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: ev.time ? '2-digit' : undefined, minute: ev.time ? '2-digit' : undefined }) : ev.date;
-      const tags = String(ev.tags || '').split(',').map(x => x.trim()).filter(Boolean).slice(0, 5).map(t => `<span>#${esc(t)}</span>`).join('');
-      return `
+    const cards = events
+      .map(ev => {
+        const dateLabel = ev.ts
+          ? new Date(ev.ts).toLocaleString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+              hour: ev.time ? '2-digit' : undefined,
+              minute: ev.time ? '2-digit' : undefined
+            })
+          : ev.date;
+        const tags = String(ev.tags || '')
+          .split(',')
+          .map(x => x.trim())
+          .filter(Boolean)
+          .slice(0, 5)
+          .map(t => `<span>#${esc(t)}</span>`)
+          .join('');
+
+        return `
         <div class="cl-card${ev.done ? ' done' : ''}" id="cl-event-${ev.id}">
           <div class="cl-card-top">
             <div>
@@ -151,9 +198,10 @@ const CL = (function () {
             </div>
           </div>
           ${ev.notes ? `<div class="cl-card-notes">${esc(ev.notes)}</div>` : ''}
-          <div class="cl-card-foot"><span>Remind ${Number(ev.remindDays || 0)} day(s) before</span><div class="cl-tags">${tags}</div></div>
+          <div class="cl-card-foot"><span>Lead ${Number(ev.remindDays || 0)} day(s) • ${reminderMeta(ev)}</span><div class="cl-tags">${tags}</div></div>
         </div>`;
-    }).join('');
+      })
+      .join('');
 
     root.innerHTML = `
       <div class="cl-wrap">
@@ -177,6 +225,9 @@ const CL = (function () {
   }
 
   function openEventModal(title, ev) {
+    const preValue = Number((ev && ev.preReminderMin) || 0);
+    const preOptions = PRE_OPTS.map(v => `<option value="${v}"${preValue === v ? ' selected' : ''}>${v === 0 ? 'None' : `${v} min`}</option>`).join('');
+
     const body = `
       <div class="cl-form">
         <label>Title</label>
@@ -189,6 +240,8 @@ const CL = (function () {
         <input id="cl-form-tags" class="modal-input" type="text" value="${esc((ev && ev.tags) || '')}" placeholder="work, personal, urgent">
         <label>Reminder lead time (days)</label>
         <input id="cl-form-remind" class="modal-input" type="number" min="0" max="365" value="${ev ? Number(ev.remindDays || 0) : 0}">
+        <label>Pre-reminder (minutes)</label>
+        <select id="cl-form-pre" class="modal-input">${preOptions}</select>
         <label>Notes</label>
         <textarea id="cl-form-notes" class="ti" rows="4" placeholder="Optional details">${esc((ev && ev.notes) || '')}</textarea>
       </div>`;
@@ -199,6 +252,7 @@ const CL = (function () {
       const timeEl = document.getElementById('cl-form-time');
       const tagsEl = document.getElementById('cl-form-tags');
       const remindEl = document.getElementById('cl-form-remind');
+      const preEl = document.getElementById('cl-form-pre');
       const notesEl = document.getElementById('cl-form-notes');
 
       const next = {
@@ -208,6 +262,7 @@ const CL = (function () {
         time: timeEl.value,
         tags: tagsEl.value.trim(),
         remindDays: Math.max(0, Number(remindEl.value || 0)),
+        preReminderMin: Math.max(0, Number(preEl.value || 0)),
         notes: notesEl.value.trim(),
         done: ev ? !!ev.done : false,
         created: ev ? ev.created : Date.now(),
@@ -225,6 +280,7 @@ const CL = (function () {
       } else {
         data.events.push(next);
       }
+
       save();
       render();
       return true;

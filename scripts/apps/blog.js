@@ -15,7 +15,14 @@ const BG = (function () {
     }
   }
   function save() {
-    localStorage.setItem(SK, JSON.stringify(data));
+    if (window.WSStorage) return WSStorage.setJSON(SK, data);
+    try {
+      localStorage.setItem(SK, JSON.stringify(data));
+      return true;
+    } catch {
+      alert('Could not save blog data. Storage may be full.');
+      return false;
+    }
   }
 
   function init() {
