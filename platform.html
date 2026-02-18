@@ -1,0 +1,67 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Workspace</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Lora:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+<canvas id="ascii-bg"></canvas>
+<div class="app-wrap">
+  <div class="g-header">
+    <div class="g-logo" onclick="navigateTo('home')">Workspace</div>
+    <div class="g-nav" id="g-nav">
+      <button class="g-nav-btn active" data-page="home" onclick="navigateTo('home')">Home</button>
+      <button class="g-nav-btn" data-page="backlog" onclick="navigateTo('backlog')">Backlog</button>
+      <button class="g-nav-btn" data-page="notes" onclick="navigateTo('notes')">Notes</button>
+      <button class="g-nav-btn" data-page="blog" onclick="navigateTo('blog')">Blog</button>
+      <button class="g-nav-btn" data-page="gallery" onclick="navigateTo('gallery')">Gallery</button>
+    </div>
+    <span class="g-clock" id="g-clock"></span>
+  </div>
+
+  <!-- HOME -->
+  <div id="page-home" class="home"></div>
+
+  <!-- BACKLOG -->
+  <div id="page-backlog" class="hidden" style="display:flex;flex-direction:column;flex:1;"></div>
+
+  <!-- NOTES -->
+  <div id="page-notes" class="hidden" style="display:flex;flex-direction:column;flex:1;"></div>
+
+  <!-- BLOG -->
+  <div id="page-blog" class="hidden" style="display:flex;flex-direction:column;flex:1;"></div>
+
+  <!-- GALLERY -->
+  <div id="page-gallery" class="hidden" style="display:flex;flex-direction:column;flex:1;"></div>
+</div>
+
+<!-- Backlog panel -->
+<div id="bl-panel-overlay" class="bl-panel-overlay hidden" onclick="BL.closePanel()"></div>
+<div id="bl-panel" class="bl-panel hidden"></div>
+
+<div id="lightbox" class="lightbox hidden" onclick="closeLightbox()">
+  <div class="lightbox-inner" onclick="event.stopPropagation()">
+    <img id="lb-img" src="">
+    <video id="lb-video" class="hidden" controls playsinline></video>
+    <div id="lb-meta" class="lb-meta"></div>
+  </div>
+</div>
+
+<div id="modal-overlay" class="modal-overlay hidden" onclick="if(event.target===this)closeModal()">
+  <div class="modal"><div class="modal-head"><div class="modal-title" id="modal-title"></div><button class="modal-x" onclick="closeModal()">&#215;</button></div>
+  <div class="modal-body" id="modal-body"></div>
+  <div class="modal-foot" id="modal-foot"><button class="fb btn-c" onclick="closeModal()">Cancel</button><button class="fb btn-s" id="modal-save-btn" onclick="modalConfirm()">Save</button></div></div>
+</div>
+
+<script src="scripts/core.js" defer></script>
+<script src="scripts/apps/backlog.js" defer></script>
+<script src="scripts/apps/notes.js" defer></script>
+<script src="scripts/apps/blog.js" defer></script>
+<script src="scripts/apps/gallery.js" defer></script>
+<script src="scripts/main.js" defer></script>
+</body>
+</html>
+
