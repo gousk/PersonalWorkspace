@@ -143,11 +143,12 @@ function drawBg(time){
 window.addEventListener('resize',initCanvas);window.addEventListener('mousemove',e=>{mX=e.clientX;mY=e.clientY;});window.addEventListener('mouseleave',()=>{mX=-1;mY=-1;});
 initCanvas();requestAnimationFrame(drawBg);
 
-const NAV_PAGES = ['home', 'backlog', 'notes', 'blog', 'gallery', 'calendar', 'health'];
+const NAV_PAGES = ['home', 'backlog', 'notes', 'blog', 'gallery', 'moodboard', 'calendar', 'health'];
 let currentPage = 'home';
 function navigateTo(page) {
   if (!NAV_PAGES.includes(page)) page = 'home';
   currentPage = page;
+  document.body.classList.toggle('moodboard-active', page === 'moodboard');
   safeSetLSRaw('ws_last_page', page, { silent: true });
   NAV_PAGES.forEach(p => {
     const el = document.getElementById('page-' + p);
@@ -167,6 +168,7 @@ function navigateTo(page) {
   if (page === 'notes') NT.init();
   if (page === 'blog') BG.init();
   if (page === 'gallery') GL.init();
+  if (page === 'moodboard') MB.init();
   if (page === 'calendar') CL.init();
   if (page === 'health') HL.init();
 }
@@ -258,6 +260,19 @@ function buildGlobalIndex() {
       tags: parseTags(media.tags),
       date: media.updated || media.created || Date.now(),
       page: 'gallery'
+    });
+  });
+
+  const moodboard = parseLS('ws_moodboard', { boards: [] });
+  (moodboard.boards || []).forEach(board => {
+    items.push({
+      app: 'moodboard',
+      itemId: board.id,
+      title: board.name || 'Untitled moodboard',
+      snippet: `${(board.items || []).length} items`,
+      tags: parseTags(board.tags),
+      date: board.updated || board.created || Date.now(),
+      page: 'moodboard'
     });
   });
 
@@ -390,6 +405,7 @@ function globalSearchOpenResult(id) {
     if (item.app === 'notes' && window.NT && NT.openFromSearch) NT.openFromSearch(item.itemId);
     if (item.app === 'blog' && window.BG && BG.openFromSearch) BG.openFromSearch(item.itemId);
     if (item.app === 'gallery' && window.GL && GL.openFromSearch) GL.openFromSearch(item.itemId);
+    if (item.app === 'moodboard' && window.MB && MB.openFromSearch) MB.openFromSearch(item.itemId);
     if (item.app === 'calendar' && window.CL && CL.openFromSearch) CL.openFromSearch(item.itemId);
     if (item.app === 'health' && window.HL && HL.openFromSearch) HL.openFromSearch(item.itemId);
   }, 60);
@@ -644,29 +660,216 @@ const WSReminders = (function () {
 })();
 
 WSReminders.start();
-const WSBackup = {
-  exportAll() {
-    const keys = ['ws_backlog', 'ws_notes', 'ws_blog', 'ws_gallery', 'ws_calendar', 'ws_health', 'ws_calendar_reminder_log', 'ws_calendar_reminder_snooze'];
+const WSBackup = (function () {
+  const DATA_KEYS = ['ws_backlog', 'ws_notes', 'ws_blog', 'ws_gallery', 'ws_moodboard', 'ws_calendar', 'ws_health', 'ws_calendar_reminder_log', 'ws_calendar_reminder_snooze'];
+  const SETTINGS_KEY = 'ws_backup_settings';
+  const DB_NAME = 'workspace_backup_handles';
+  const DB_STORE = 'handles';
+  const DIR_KEY = 'backup_dir';
+  const DEFAULT_SETTINGS = { enabled: false, intervalMinutes: 60, maxBackups: 10, dirName: '', lastAutoBackup: 0, lastAutoError: '' };
+  let autoTimer = null;
+  let autoRunning = false;
+
+  function settings() {
+    const raw = parseLS(SETTINGS_KEY, {});
+    return {
+      ...DEFAULT_SETTINGS,
+      ...(raw || {}),
+      intervalMinutes: Math.max(5, Number(raw && raw.intervalMinutes) || DEFAULT_SETTINGS.intervalMinutes),
+      maxBackups: Math.max(1, Number(raw && raw.maxBackups) || DEFAULT_SETTINGS.maxBackups)
+    };
+  }
+  function saveSettings(next) {
+    safeSetLSJSON(SETTINGS_KEY, { ...settings(), ...next }, { silent: true });
+  }
+  function payloadText() {
     const payload = {
       version: 1,
       exportedAt: new Date().toISOString(),
       data: {}
     };
-    keys.forEach(key => {
+    DATA_KEYS.forEach(key => {
       payload.data[key] = parseLS(key, null);
     });
-    const text = JSON.stringify(payload, null, 2);
+    return JSON.stringify(payload, null, 2);
+  }
+  function stamp() {
+    return new Date().toISOString().replace(/[:.]/g, '-');
+  }
+  function openDb() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(DB_STORE);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  async function idbGet(key) {
+    const db = await openDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, 'readonly');
+      const req = tx.objectStore(DB_STORE).get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+      tx.oncomplete = () => db.close();
+    });
+  }
+  async function idbSet(key, value) {
+    const db = await openDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, 'readwrite');
+      tx.objectStore(DB_STORE).put(value, key);
+      tx.oncomplete = () => { db.close(); resolve(true); };
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+  async function getDirectoryHandle(options = {}) {
+    if (!('showDirectoryPicker' in window)) return null;
+    const handle = await idbGet(DIR_KEY);
+    if (!handle) return null;
+    const mode = { mode: 'readwrite' };
+    const permission = await handle.queryPermission(mode);
+    if (permission === 'granted') return handle;
+    if (options.requestPermission) {
+      const requested = await handle.requestPermission(mode);
+      if (requested === 'granted') return handle;
+    }
+    return null;
+  }
+  async function chooseDirectory() {
+    if (!('showDirectoryPicker' in window)) {
+      alert('Auto backup folder selection is not supported in this browser. Use Chrome or Edge.');
+      return;
+    }
+    try {
+      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      await idbSet(DIR_KEY, handle);
+      saveSettings({ dirName: handle.name, lastAutoError: '' });
+      openSettings();
+    } catch (err) {
+      if (err && err.name !== 'AbortError') alert('Could not select backup folder.');
+    }
+  }
+  async function writeBackupToDirectory(handle, reason) {
+    const fileName = `workspace-auto-backup-${stamp()}.json`;
+    const file = await handle.getFileHandle(fileName, { create: true });
+    const writable = await file.createWritable();
+    await writable.write(payloadText());
+    await writable.close();
+    await pruneBackups(handle, settings().maxBackups);
+    const now = Date.now();
+    saveSettings({ lastAutoBackup: now, lastAutoError: '' });
+    safeSetLSRaw('ws_last_backup', String(now), { silent: true });
+    if (currentPage === 'home') renderHome();
+    return { fileName, reason };
+  }
+  async function pruneBackups(handle, maxBackups) {
+    const backups = [];
+    for await (const [name, entry] of handle.entries()) {
+      if (entry.kind === 'file' && /^workspace-auto-backup-.*\.json$/.test(name)) {
+        let modified = 0;
+        try { modified = (await entry.getFile()).lastModified || 0; } catch {}
+        backups.push({ name, modified });
+      }
+    }
+    backups.sort((a, b) => b.modified - a.modified);
+    const extra = backups.slice(Math.max(1, maxBackups));
+    for (const item of extra) {
+      try { await handle.removeEntry(item.name); } catch {}
+    }
+  }
+  function scheduleAutoCheck() {
+    if (autoTimer) clearTimeout(autoTimer);
+    const s = settings();
+    if (!s.enabled) return;
+    const intervalMs = s.intervalMinutes * 60 * 1000;
+    const last = Number(s.lastAutoBackup || localStorage.getItem('ws_last_backup') || 0);
+    const dueIn = Math.max(30 * 1000, intervalMs - Math.max(0, Date.now() - last));
+    autoTimer = setTimeout(() => checkAuto('timer'), dueIn);
+  }
+  async function checkAuto(reason = 'check') {
+    const s = settings();
+    if (!s.enabled || autoRunning) { scheduleAutoCheck(); return false; }
+    const intervalMs = s.intervalMinutes * 60 * 1000;
+    const last = Number(s.lastAutoBackup || localStorage.getItem('ws_last_backup') || 0);
+    if (Date.now() - last < intervalMs) { scheduleAutoCheck(); return false; }
+    autoRunning = true;
+    try {
+      const handle = await getDirectoryHandle({ requestPermission: false });
+      if (!handle) {
+        saveSettings({ lastAutoError: 'Backup folder permission is missing. Open Backup Settings and reselect the folder.' });
+        return false;
+      }
+      await writeBackupToDirectory(handle, reason);
+      return true;
+    } catch (err) {
+      saveSettings({ lastAutoError: 'Auto backup failed. Check folder permissions and available disk space.' });
+      return false;
+    } finally {
+      autoRunning = false;
+      scheduleAutoCheck();
+    }
+  }
+  function exportAll() {
+    const text = payloadText();
     const blob = new Blob([text], { type: 'application/json' });
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `workspace-backup-${stamp}.json`;
+    a.download = `workspace-backup-${stamp()}.json`;
     a.click();
     URL.revokeObjectURL(a.href);
     safeSetLSRaw('ws_last_backup', String(Date.now()), { silent: true });
     if (currentPage === 'home') renderHome();
-  },
-  importAll(event) {
+  }
+  function openSettings() {
+    const s = settings();
+    const supported = 'showDirectoryPicker' in window;
+    const last = s.lastAutoBackup ? new Date(Number(s.lastAutoBackup)).toLocaleString() : 'Never';
+    const folder = s.dirName ? esc(s.dirName) : 'No folder selected';
+    const body = `
+      <div class="backup-settings">
+        <label class="backup-toggle"><span>Auto Backup</span><input id="bk-enabled" type="checkbox"${s.enabled ? ' checked' : ''}><i></i></label>
+        <div class="backup-folder-row">
+          <div class="backup-folder-meta"><div class="backup-label">Backup Folder</div><div class="backup-folder">${folder}</div></div>
+          <button class="nav-btn" onclick="WSBackup.chooseDirectory()">Choose Folder</button>
+        </div>
+        <div class="backup-grid">
+          <label><span>Interval (minutes)</span><input id="bk-interval" class="ti backup-input" type="number" min="5" step="5" value="${s.intervalMinutes}"></label>
+          <label><span>Keep backups</span><input id="bk-max" class="ti backup-input" type="number" min="1" step="1" value="${s.maxBackups}"></label>
+        </div>
+        <div class="backup-status">
+          <div>Last auto backup: ${esc(last)}</div>
+          ${supported ? '' : '<div class="warn">Folder auto backup needs Chrome or Edge File System Access support.</div>'}
+          ${s.lastAutoError ? `<div class="warn">${esc(s.lastAutoError)}</div>` : ''}
+        </div>
+        <div class="backup-actions">
+          <button class="fb btn-c" onclick="closeModal()">Cancel</button>
+          <button class="fb btn-c" onclick="WSBackup.runNow()">Run Now</button>
+          <button class="fb btn-s" onclick="WSBackup.saveSettingsFromModal()">Save Settings</button>
+        </div>
+      </div>`;
+    openCustomModal('Backup Settings', body, null, { showSave: false });
+  }
+  function saveSettingsFromModal() {
+    const enabled = !!document.getElementById('bk-enabled')?.checked;
+    const intervalMinutes = Math.max(5, Number(document.getElementById('bk-interval')?.value) || DEFAULT_SETTINGS.intervalMinutes);
+    const maxBackups = Math.max(1, Number(document.getElementById('bk-max')?.value) || DEFAULT_SETTINGS.maxBackups);
+    saveSettings({ enabled, intervalMinutes, maxBackups });
+    closeModal();
+    scheduleAutoCheck();
+  }
+  async function runNow() {
+    saveSettingsFromModal();
+    const handle = await getDirectoryHandle({ requestPermission: true });
+    if (!handle) { alert('Choose a backup folder first.'); openSettings(); return; }
+    try {
+      await writeBackupToDirectory(handle, 'manual-auto-folder');
+      alert('Backup created in the selected folder.');
+    } catch {
+      alert('Could not create backup in the selected folder.');
+    }
+  }
+  function importAll(event) {
     const file = event.target.files && event.target.files[0];
     if (!file) return;
     const reader = new FileReader();
@@ -712,13 +915,26 @@ const WSBackup = {
     reader.readAsText(file);
     event.target.value = '';
   }
-};
+  function init() {
+    scheduleAutoCheck();
+    setTimeout(() => checkAuto('startup'), 1000);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) checkAuto('visible');
+      else checkAuto('hidden');
+    });
+    window.addEventListener('pagehide', () => { checkAuto('pagehide'); });
+  }
+  return { exportAll, importAll, openSettings, chooseDirectory, saveSettingsFromModal, runNow, checkAuto, init };
+})();
+
+WSBackup.init();
 
 function renderHome() {
   const blData = parseLS('ws_backlog', { boards: [] });
   const ntData = parseLS('ws_notes', { notes: [] });
   const bgData = parseLS('ws_blog', { posts: [] });
   const glData = parseLS('ws_gallery', { items: [] });
+  const mbData = parseLS('ws_moodboard', { boards: [] });
   const clData = parseLS('ws_calendar', { events: [] });
   const hlData = parseLS('ws_health', { nutrition: { days: {} }, water: { days: {} } });
 
@@ -726,6 +942,7 @@ function renderHome() {
   const ntCount = (ntData.notes || []).length;
   const bgCount = (bgData.posts || []).length;
   const glCount = (glData.items || []).length;
+  const mbCount = (mbData.boards || []).length;
   const clCount = (clData.events || []).filter(e => !e.done).length;
   const dayKey = localDayKey();
   const hlFoods = (((hlData.nutrition || {}).days || {})[dayKey] || {}).items || [];
@@ -763,8 +980,9 @@ function renderHome() {
       <div class="home-tile home-tile-b" onclick="navigateTo('notes')"><div class="home-tile-stat">${ntCount} notes</div><div class="home-tile-name">Notes</div><div class="home-tile-desc">Quick capture with tags, pinning and better filtering.</div></div>
       <div class="home-tile home-tile-c" onclick="navigateTo('blog')"><div class="home-tile-stat">${bgCount} posts</div><div class="home-tile-name">Blog</div><div class="home-tile-desc">Block-based writing with search and editorial controls.</div></div>
       <div class="home-tile home-tile-d" onclick="navigateTo('gallery')"><div class="home-tile-stat">${glCount} media</div><div class="home-tile-name">Gallery</div><div class="home-tile-desc">Stacked media board for images, gifs and videos.</div></div>
-      <div class="home-tile home-tile-e" onclick="navigateTo('calendar')"><div class="home-tile-stat">${clCount} open</div><div class="home-tile-name">Calendar</div><div class="home-tile-desc">Plan events and reminders with upcoming visibility.</div></div>
-      <div class="home-tile home-tile-f" onclick="navigateTo('health')"><div class="home-tile-stat">${hlCount} today</div><div class="home-tile-name">Health</div><div class="home-tile-desc">Track water intake, macros, activity and daily calorie targets.</div></div>
+      <div class="home-tile home-tile-e" onclick="navigateTo('moodboard')"><div class="home-tile-stat">${mbCount} boards</div><div class="home-tile-name">Moodboard</div><div class="home-tile-desc">Free-form canvas for images, videos and text. Move, scale, rotate.</div></div>
+      <div class="home-tile home-tile-f" onclick="navigateTo('calendar')"><div class="home-tile-stat">${clCount} open</div><div class="home-tile-name">Calendar</div><div class="home-tile-desc">Plan events and reminders with upcoming visibility.</div></div>
+      <div class="home-tile home-tile-g" onclick="navigateTo('health')"><div class="home-tile-stat">${hlCount} today</div><div class="home-tile-name">Health</div><div class="home-tile-desc">Track water intake, macros, activity and daily calorie targets.</div></div>
     </div>
     <div class="home-widgets">
       <div class="home-widget">

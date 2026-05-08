@@ -8,6 +8,7 @@ const BL = (function () {
   let curTask = null;
   let archiveOpen = false;
   let draggedId = null;
+  let dropTarget = { colId: null, beforeId: null };
 
   function load() { try { return JSON.parse(localStorage.getItem(SK)) || null; } catch { return null; } }
   function save() {
@@ -192,6 +193,11 @@ const BL = (function () {
 
     root.innerHTML = `<div class="bl-board-nav"><button class="nav-btn" onclick="BL.goHub()">&#8592; Boards</button><span class="bl-sep">|</span><span class="bl-bnd">${esc(board.name)}</span><div class="bl-nav-right"><button class="nav-btn" onclick="BL.toggleArchive()">Archive <span class="bl-archive-badge" id="bl-arc-count">${board.archive.length}</span></button><button class="nav-btn" onclick="BL.openColMgr()">Columns</button></div></div><div class="bl-stats-bar">${statsHtml}</div><div class="bl-prog-wrap"><span>${pct}%</span><div class="bl-prog-track"><div class="bl-prog-fill" style="width:${pct}%"></div></div></div><div class="bl-columns" id="bl-columns">${colsHtml}</div><div class="bl-archive-drawer${archiveOpen ? ' open' : ''}" id="bl-archive-drawer"><div class="bl-archive-head"><span>Archived Items</span><button class="nav-btn" onclick="BL.toggleArchive()" style="font-size:10px;padding:3px 10px;">Close</button></div><div class="bl-archive-list" id="bl-archive-list"></div></div>`;
 
+    function clearIndicators() {
+      root.querySelectorAll('.bl-card.drop-before').forEach(c => c.classList.remove('drop-before'));
+      root.querySelectorAll('.bl-cards.drop-end').forEach(c => c.classList.remove('drop-end'));
+    }
+
     root.querySelectorAll('.bl-card').forEach(card => {
       const handle = card.querySelector('.bl-card-handle');
       card.setAttribute('draggable', 'false');
@@ -206,7 +212,9 @@ const BL = (function () {
         card.classList.remove('dragging');
         card.setAttribute('draggable', 'false');
         draggedId = null;
+        dropTarget = { colId: null, beforeId: null };
         root.querySelectorAll('.bl-col').forEach(c => c.classList.remove('drag-over'));
+        clearIndicators();
       });
     });
 
@@ -214,25 +222,64 @@ const BL = (function () {
       col.addEventListener('dragover', e => {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
+        const cardsContainer = col.querySelector('.bl-cards');
+        if (!cardsContainer) return;
+        clearIndicators();
         col.classList.add('drag-over');
+        const cards = [...cardsContainer.querySelectorAll('.bl-card:not(.dragging)')];
+        const y = e.clientY;
+        let beforeCard = null;
+        for (const c of cards) {
+          const rect = c.getBoundingClientRect();
+          if (y < rect.top + rect.height / 2) { beforeCard = c; break; }
+        }
+        if (beforeCard) {
+          beforeCard.classList.add('drop-before');
+          dropTarget = { colId: col.dataset.colid, beforeId: beforeCard.dataset.id };
+        } else {
+          cardsContainer.classList.add('drop-end');
+          dropTarget = { colId: col.dataset.colid, beforeId: null };
+        }
       });
       col.addEventListener('dragleave', e => {
-        if (!col.contains(e.relatedTarget)) col.classList.remove('drag-over');
+        if (!col.contains(e.relatedTarget)) {
+          col.classList.remove('drag-over');
+        }
       });
       col.addEventListener('drop', e => {
         e.preventDefault();
         col.classList.remove('drag-over');
+        clearIndicators();
         if (!draggedId) return;
-        const task = board.tasks.find(t => t.id === draggedId);
-        if (task) {
-          task.columnId = col.dataset.colid;
-          save();
-          renderBoard();
-        }
+        const targetColId = (dropTarget.colId) || col.dataset.colid;
+        reorderTask(draggedId, targetColId, dropTarget.beforeId);
       });
     });
 
     if (archiveOpen) renderArchive();
+  }
+
+  function reorderTask(draggedId, targetColId, beforeId) {
+    const board = data.boards.find(b => b.id === curBoard);
+    if (!board) return;
+    const dragIdx = board.tasks.findIndex(t => t.id === draggedId);
+    if (dragIdx === -1) return;
+    const [task] = board.tasks.splice(dragIdx, 1);
+    task.columnId = targetColId;
+    if (beforeId) {
+      const insertIdx = board.tasks.findIndex(t => t.id === beforeId);
+      if (insertIdx === -1) board.tasks.push(task);
+      else board.tasks.splice(insertIdx, 0, task);
+    } else {
+      let lastIdx = -1;
+      for (let i = 0; i < board.tasks.length; i++) {
+        if (board.tasks[i].columnId === targetColId) lastIdx = i;
+      }
+      if (lastIdx === -1) board.tasks.push(task);
+      else board.tasks.splice(lastIdx + 1, 0, task);
+    }
+    save();
+    renderBoard();
   }
 
   function goHub() { renderHub(); }

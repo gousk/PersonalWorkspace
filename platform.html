@@ -18,12 +18,14 @@
       <button class="g-nav-btn" data-page="notes" title="Notes (Alt+3)" onclick="navigateTo('notes')">Notes</button>
       <button class="g-nav-btn" data-page="blog" title="Blog (Alt+4)" onclick="navigateTo('blog')">Blog</button>
       <button class="g-nav-btn" data-page="gallery" title="Gallery (Alt+5)" onclick="navigateTo('gallery')">Gallery</button>
-      <button class="g-nav-btn" data-page="calendar" title="Calendar (Alt+6)" onclick="navigateTo('calendar')">Calendar</button>
-      <button class="g-nav-btn" data-page="health" title="Health (Alt+7)" onclick="navigateTo('health')">Health</button>
+      <button class="g-nav-btn" data-page="moodboard" title="Moodboard (Alt+6)" onclick="navigateTo('moodboard')">Moodboard</button>
+      <button class="g-nav-btn" data-page="calendar" title="Calendar (Alt+7)" onclick="navigateTo('calendar')">Calendar</button>
+      <button class="g-nav-btn" data-page="health" title="Health (Alt+8)" onclick="navigateTo('health')">Health</button>
     </div>
     <div class="g-tools">
       <button class="g-tool-btn" title="Search (Ctrl+K)" onclick="openGlobalSearch()">Search</button>
       <button class="g-tool-btn" title="Download local backup" onclick="WSBackup.exportAll()">Backup</button>
+      <button class="g-tool-btn" title="Auto backup settings" onclick="WSBackup.openSettings()">Backup Settings</button>
       <label class="g-tool-btn g-tool-label" title="Restore from backup file">Restore
         <input id="restore-input" type="file" accept="application/json" onchange="WSBackup.importAll(event)">
       </label>
@@ -46,12 +48,18 @@
   <!-- GALLERY -->
   <div id="page-gallery" class="hidden" style="display:flex;flex-direction:column;flex:1;"></div>
 
+  <!-- MOODBOARD -->
+  <div id="page-moodboard" class="hidden" style="display:flex;flex-direction:column;flex:1;"></div>
+
   <!-- CALENDAR -->
   <div id="page-calendar" class="hidden" style="display:flex;flex-direction:column;flex:1;"></div>
 
   <!-- HEALTH -->
   <div id="page-health" class="hidden" style="display:flex;flex-direction:column;flex:1;"></div>
 </div>
+
+<div id="blackout-overlay" class="blackout-overlay" aria-hidden="true"></div>
+<button id="blackout-fab" class="blackout-fab" title="Blackout" aria-label="Blackout" onclick="enterBlackoutMode()"></button>
 
 <!-- Backlog panel -->
 <div id="bl-panel-overlay" class="bl-panel-overlay hidden" onclick="BL.closePanel()"></div>
@@ -87,6 +95,7 @@
 <script src="scripts/apps/notes.js" defer></script>
 <script src="scripts/apps/blog.js" defer></script>
 <script src="scripts/apps/gallery.js" defer></script>
+<script src="scripts/apps/moodboard.js" defer></script>
 <script src="scripts/apps/calendar.js" defer></script>
 <script src="scripts/apps/health.js" defer></script>
 <script src="scripts/main.js" defer></script>
