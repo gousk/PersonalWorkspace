@@ -10,6 +10,8 @@ const GL = (function () {
   let tagFilter = '';
   let folderFilter = 'all'; // 'all' | 'root' | <folderId>
   let compactingMedia = false;
+  let selectionMode = false;
+  const selectedIds = new Set();
 
   function load() {
     try {
@@ -215,24 +217,36 @@ const GL = (function () {
       .sort((a, b) => (b.updated || b.created || 0) - (a.updated || a.created || 0));
   }
 
+  function pruneSelection() {
+    const live = new Set(data.items.map(item => item.id));
+    [...selectedIds].forEach(id => {
+      if (!live.has(id)) selectedIds.delete(id);
+    });
+  }
+
   function render() {
     const root = document.getElementById('page-gallery');
+    pruneSelection();
     const all = data.items;
+    const shown = visibleItems();
     const photos = all.filter(i => mediaKind(i) === 'image').length;
     const videos = all.filter(i => mediaKind(i) === 'video').length;
     const favorites = all.filter(i => i.favorite).length;
     const tags = tagCloud();
+    const selectedCount = selectedIds.size;
 
-    const cards = visibleItems().map(item => {
+    const cards = shown.map(item => {
       const title = esc(item.title || 'Untitled');
       const lego = legoClass(item);
       const kind = mediaKind(item);
+      const selected = selectedIds.has(item.id);
       const media = kind === 'video'
         ? `<video class="gl-card-video" src="${item.src}" muted playsinline preload="metadata" onloadedmetadata="GL.captureMeta('${item.id}',this.videoWidth,this.videoHeight);GL.reflow()"></video>`
         : `<img class="gl-card-img" src="${item.src}" alt="${title}" loading="lazy" onload="GL.captureMeta('${item.id}',this.naturalWidth,this.naturalHeight);GL.reflow()">`;
       const fName = folderName(item.folderId);
       const folderTag = fName ? `<span class="gl-card-folder">${esc(fName)}</span>` : '';
-      return `<div class="gl-card ${lego}" onclick="GL.open('${item.id}')"><div class="gl-photo-frame">${media}${folderTag}</div></div>`;
+      const check = selectionMode ? `<button class="gl-select-mark${selected ? ' active' : ''}" aria-label="${selected ? 'Deselect' : 'Select'} ${title}" onclick="event.stopPropagation();GL.toggleSelected('${item.id}')"></button>` : '';
+      return `<div class="gl-card ${lego}${selected ? ' selected' : ''}${selectionMode ? ' selecting' : ''}" onclick="${selectionMode ? `GL.toggleSelected('${item.id}')` : `GL.open('${item.id}')`}"><div class="gl-photo-frame">${media}${folderTag}${check}</div></div>`;
     }).join('');
 
     const tagFilters = ['<button class="gl-chip' + (tagFilter ? '' : ' active') + '" onclick="GL.setTagFilter(\'\')">All tags</button>']
@@ -248,6 +262,11 @@ const GL = (function () {
 
     const destLabel = folderFilter === 'all' || folderFilter === 'root' ? 'Root'
       : (folderName(folderFilter) || 'Root');
+    const selectionActions = selectionMode ? `
+            <button class="nav-btn" onclick="GL.selectVisible()" title="Select every media item in the current view"${shown.length ? '' : ' disabled'}>Select All</button>
+            <button class="nav-btn" onclick="GL.clearSelection()" title="Deselect all selected media"${selectedCount ? '' : ' disabled'}>Deselect All</button>
+            <button class="nav-btn" onclick="GL.moveSelected()" title="Move selected media to a folder"${selectedCount ? '' : ' disabled'}>Move to Folder</button>
+            <button class="nav-btn gl-danger-btn" onclick="GL.deleteSelected()" title="Delete selected media"${selectedCount ? '' : ' disabled'}>Delete Selected</button>` : '';
 
     root.innerHTML = `
       <div class="gl-wrap">
@@ -270,6 +289,8 @@ const GL = (function () {
           <div class="gl-toolbar-actions">
             <label class="gl-upload" title="Uploads go to: ${esc(destLabel)}">+ Add<input type="file" accept="image/*,video/*,.gif" multiple onchange="GL.handleFiles(event)"></label>
             <input class="ti gl-search" placeholder="Search media..." value="${esc(searchTerm)}" oninput="GL.setSearch(this.value)">
+            <button class="nav-btn${selectionMode ? ' active' : ''}" onclick="GL.toggleSelectionMode()" title="${selectionMode ? 'Exit selection mode' : 'Enter selection mode'}">${selectionMode ? 'Exit Selection' : 'Selection Mode'}</button>
+            ${selectionActions}
             <div class="gl-folder-actions">
               <select class="ti gl-folder-sel" onchange="GL.setFolderFilter(this.value)" title="Filter by folder. Uploads go to selected folder.">${folderOpts}</select>
               <button class="nav-btn" onclick="GL.newFolder()" title="Create new folder">+ Folder</button>
@@ -278,7 +299,7 @@ const GL = (function () {
           </div>
         </div>
         <div class="gl-list">
-          <div class="gl-list-title">Gallery${folderFilter !== 'all' && folderFilter !== 'root' ? ` <span class="gl-list-sub">/ ${esc(folderName(folderFilter))}</span>` : folderFilter === 'root' ? ' <span class="gl-list-sub">/ Root</span>' : ''}</div>
+          <div class="gl-list-title">Gallery${folderFilter !== 'all' && folderFilter !== 'root' ? ` <span class="gl-list-sub">/ ${esc(folderName(folderFilter))}</span>` : folderFilter === 'root' ? ' <span class="gl-list-sub">/ Root</span>' : ''}${selectedCount ? ` <span class="gl-list-sub">/ ${selectedCount} selected</span>` : ''}</div>
           <div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap;">${tagFilters}</div>
           <div class="gl-grid">${cards || '<div class="gl-empty">No media here. Upload to populate this view.</div>'}</div>
         </div>
@@ -487,6 +508,48 @@ const GL = (function () {
     openMediaId = null;
   }
 
+  function toggleSelectionMode() {
+    selectionMode = !selectionMode;
+    if (!selectionMode) selectedIds.clear();
+    render();
+  }
+  function toggleSelected(id) {
+    if (!getItem(id)) return;
+    selectionMode = true;
+    if (selectedIds.has(id)) selectedIds.delete(id);
+    else selectedIds.add(id);
+    render();
+  }
+  function selectVisible() {
+    visibleItems().forEach(item => selectedIds.add(item.id));
+    selectionMode = selectedIds.size > 0;
+    render();
+  }
+  function clearSelection() {
+    selectedIds.clear();
+    selectionMode = false;
+    render();
+  }
+  function selectedItems() {
+    return data.items.filter(item => selectedIds.has(item.id));
+  }
+  function deleteSelected() {
+    const items = selectedItems();
+    if (!items.length) return;
+    if (!confirm(`Delete ${items.length} selected media item(s)?`)) return;
+    const ids = new Set(items.map(item => item.id));
+    items.forEach(item => mediaDelete(item.mediaKey));
+    data.items = data.items.filter(item => !ids.has(item.id));
+    selectedIds.clear();
+    selectionMode = false;
+    save();
+    render();
+    if (openMediaId && ids.has(openMediaId)) {
+      openMediaId = null;
+      closeLightbox();
+    }
+  }
+
   function setFolderFilter(value) {
     folderFilter = value || 'all';
     render();
@@ -560,6 +623,26 @@ const GL = (function () {
       return true;
     }, { saveLabel: 'Move' });
   }
+  function moveSelected() {
+    const items = selectedItems();
+    if (!items.length) return;
+    const folders = data.folders.slice().sort((a, b) => a.name.localeCompare(b.name));
+    const opts = [`<option value="">Root</option>`].concat(folders.map(f => `<option value="${f.id}">${esc(f.name)}</option>`)).join('');
+    const body = `<div class="gl-move-form"><label class="gl-move-label">Move ${items.length} selected item(s) to:</label><select id="gl-move-sel" class="ti">${opts}</select><div class="gl-move-hint">This changes the folder for every selected media item.</div></div>`;
+    openCustomModal('Move Selected to Folder', body, () => {
+      const sel = document.getElementById('gl-move-sel');
+      const target = sel ? sel.value : '';
+      items.forEach(item => {
+        item.folderId = target || null;
+        item.updated = Date.now();
+      });
+      selectedIds.clear();
+      selectionMode = false;
+      save();
+      render();
+      return true;
+    }, { saveLabel: 'Move' });
+  }
 
   function setTypeFilter(type) {
     typeFilter = type;
@@ -606,6 +689,12 @@ const GL = (function () {
     reflow,
     captureMeta,
     clearOpenState,
+    toggleSelectionMode,
+    toggleSelected,
+    selectVisible,
+    clearSelection,
+    moveSelected,
+    deleteSelected,
     setTypeFilter,
     toggleFavOnly,
     setSearch,

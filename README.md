@@ -70,6 +70,7 @@ Media library for images, GIFs, and videos.
 - Multi-file upload.
 - Search, type filters, favorites, and tag filters.
 - Folder creation, folder filtering, and media moving.
+- Selection mode for bulk actions: select all visible media, move selected media to a folder, or delete selected media.
 - Lightbox viewer with metadata controls.
 - Image files are stored as full media in IndexedDB and lightweight previews in localStorage.
 
@@ -126,7 +127,7 @@ Search also supports tag filtering.
 
 ### Backup and Restore
 
-Manual backup exports workspace data to a JSON file.
+Manual backup writes workspace data to the selected backup folder.
 
 Restore imports a backup JSON file and replaces current local workspace data.
 
@@ -136,7 +137,7 @@ Auto backup can be configured from **Backup Settings**:
 - Choose a backup folder.
 - Set backup interval in minutes.
 - Set how many backup files to keep.
-- Run a backup manually.
+- Run a backup manually into the selected folder.
 
 Auto backup checks when the app starts, while it is open, and when visibility changes. It only writes a new backup when the configured interval has passed.
 

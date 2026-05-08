@@ -736,19 +736,24 @@ const WSBackup = (function () {
     }
     return null;
   }
-  async function chooseDirectory() {
+  async function pickDirectoryHandle() {
     if (!('showDirectoryPicker' in window)) {
       alert('Auto backup folder selection is not supported in this browser. Use Chrome or Edge.');
-      return;
+      return null;
     }
     try {
       const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
       await idbSet(DIR_KEY, handle);
       saveSettings({ dirName: handle.name, lastAutoError: '' });
-      openSettings();
+      return handle;
     } catch (err) {
       if (err && err.name !== 'AbortError') alert('Could not select backup folder.');
+      return null;
     }
+  }
+  async function chooseDirectory() {
+    const handle = await pickDirectoryHandle();
+    if (handle) openSettings();
   }
   async function writeBackupToDirectory(handle, reason) {
     const fileName = `workspace-auto-backup-${stamp()}.json`;
@@ -810,16 +815,20 @@ const WSBackup = (function () {
       scheduleAutoCheck();
     }
   }
-  function exportAll() {
-    const text = payloadText();
-    const blob = new Blob([text], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `workspace-backup-${stamp()}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-    safeSetLSRaw('ws_last_backup', String(Date.now()), { silent: true });
-    if (currentPage === 'home') renderHome();
+  async function exportAll() {
+    let handle = await getDirectoryHandle({ requestPermission: true });
+    if (!handle) handle = await pickDirectoryHandle();
+    if (!handle) {
+      return;
+    }
+    try {
+      await writeBackupToDirectory(handle, 'manual-header');
+      scheduleAutoCheck();
+      alert('Backup created in the selected folder.');
+    } catch {
+      saveSettings({ lastAutoError: 'Manual backup failed. Check folder permissions and available disk space.' });
+      alert('Could not create backup in the selected folder.');
+    }
   }
   function openSettings() {
     const s = settings();
@@ -860,10 +869,12 @@ const WSBackup = (function () {
   }
   async function runNow() {
     saveSettingsFromModal();
-    const handle = await getDirectoryHandle({ requestPermission: true });
-    if (!handle) { alert('Choose a backup folder first.'); openSettings(); return; }
+    let handle = await getDirectoryHandle({ requestPermission: true });
+    if (!handle) handle = await pickDirectoryHandle();
+    if (!handle) { openSettings(); return; }
     try {
       await writeBackupToDirectory(handle, 'manual-auto-folder');
+      scheduleAutoCheck();
       alert('Backup created in the selected folder.');
     } catch {
       alert('Could not create backup in the selected folder.');

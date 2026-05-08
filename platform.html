@@ -24,7 +24,7 @@
     </div>
     <div class="g-tools">
       <button class="g-tool-btn" title="Search (Ctrl+K)" onclick="openGlobalSearch()">Search</button>
-      <button class="g-tool-btn" title="Download local backup" onclick="WSBackup.exportAll()">Backup</button>
+      <button class="g-tool-btn" title="Create backup in selected folder" onclick="WSBackup.exportAll()">Backup</button>
       <button class="g-tool-btn" title="Auto backup settings" onclick="WSBackup.openSettings()">Backup Settings</button>
       <label class="g-tool-btn g-tool-label" title="Restore from backup file">Restore
         <input id="restore-input" type="file" accept="application/json" onchange="WSBackup.importAll(event)">
