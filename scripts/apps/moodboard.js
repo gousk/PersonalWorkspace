@@ -68,6 +68,14 @@ const MB = (function () {
   function getBoard(id) { return data.boards.find(b => b.id === (id || curBoard)); }
   function getItem(id) { const b = getBoard(); return b ? b.items.find(x => x.id === id) : null; }
   function nextZ() { const b = getBoard(); if (!b || !b.items.length) return 1; return Math.max(...b.items.map(x => x.z || 0)) + 1; }
+  function viewportCenter() {
+    const wrap = document.getElementById('mb-canvas-wrap');
+    if (!wrap || !wrap.clientWidth) return { x: 400, y: 300 };
+    return {
+      x: wrap.scrollLeft + wrap.clientWidth / 2,
+      y: wrap.scrollTop + wrap.clientHeight / 2
+    };
+  }
   function getMinZoom(wrap) {
     if (!wrap) return MIN_ZOOM;
     return Math.max(MIN_ZOOM, wrap.clientWidth / CANVAS_W, wrap.clientHeight / CANVAS_H);
@@ -831,7 +839,11 @@ const MB = (function () {
   function addText() {
     const b = getBoard(); if (!b) return;
     const id = uid();
-    b.items.push({ id, type: 'text', text: 'Your text', x: 140, y: 140, w: 320, h: 80, rot: 0, z: nextZ(), color: '#ffffff', fontSize: 36, font: 'serif', weight: 600, italic: false, align: 'left' });
+    const w = 320;
+    const h = 80;
+    const center = getViewportCenterPoint() || { x: 300, y: 180 };
+    const pos = clampToViewport(center.x - w / 2, center.y - h / 2, w, h);
+    b.items.push({ id, type: 'text', text: 'Your text', x: pos.x, y: pos.y, w, h, rot: 0, z: nextZ(), color: '#ffffff', fontSize: 36, font: 'serif', weight: 600, italic: false, align: 'left' });
     b.updated = Date.now();
     selectedId = id;
     save();
@@ -856,7 +868,13 @@ const MB = (function () {
       node.removeEventListener('blur', finish);
       node.removeEventListener('keydown', stop);
       const it = getItem(id);
-      if (it) { it.text = node.innerText.trim() || 'Your text'; save(); renderBoard(); }
+      if (it) {
+        it.text = node.innerText.trim() || 'Your text';
+        node.textContent = it.text;
+        const b = getBoard();
+        if (b) b.updated = Date.now();
+        save();
+      }
     };
     node.addEventListener('blur', finish);
     node.addEventListener('keydown', stop);
