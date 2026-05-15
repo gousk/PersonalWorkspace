@@ -218,6 +218,7 @@ const MB = (function () {
         <span>Text <strong>${txtN}</strong></span>
         ${tagBits ? `<span class="mb-stats-tags">${tagBits}</span>` : ''}
       </div>
+      ${window.WSLinks ? WSLinks.renderPanel({ app: 'moodboard', id: b.id }) : ''}
       <div class="mb-canvas-wrap" id="mb-canvas-wrap">
         <div class="mb-canvas" id="mb-canvas" style="width:${CANVAS_W * getZoom()}px;height:${CANVAS_H * getZoom()}px;background-color:${esc(b.bgColor || DEFAULT_BG)};--mb-dot-color:${getDotStyle(b).dot};--mb-empty-color:${getDotStyle(b).empty};--mb-dot-size:${22 * getZoom()}px;--mb-dot-radius:${Math.max(0.4, getZoom())}px;--mb-dot-fade:${Math.max(0.7, 1.4 * getZoom())}px">
           ${items.map(renderItem).join('')}

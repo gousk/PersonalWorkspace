@@ -178,6 +178,7 @@ const BG = (function () {
           <input type="text" value="${esc(p.summary || '')}" placeholder="short summary..." onchange="BG.saveSummary(this.value)" style="flex:1;min-width:180px;">
           <span style="margin-left:auto;font-family:var(--mono);font-size:10px">${new Date(p.created).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
         </div>
+        ${window.WSLinks ? WSLinks.renderPanel({ app: 'blog', id: p.id }) : ''}
         <div class="bg-block-bar">
           <button class="bg-block-btn" onclick="BG.add('text')">Text</button>
           <button class="bg-block-btn" onclick="BG.add('h1')">H1</button>

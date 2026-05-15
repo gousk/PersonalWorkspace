@@ -416,7 +416,7 @@ const GL = (function () {
     if (meta) {
       const fName = folderName(item.folderId);
       const folderLine = fName ? `<div class="lb-meta-sub">Folder: ${esc(fName)}</div>` : '';
-      meta.innerHTML = `<div class="lb-meta-title">${esc(item.title || 'Untitled')}</div><div class="lb-meta-sub">${date} | ${kind}</div>${folderLine}${tags ? `<div class="lb-meta-sub">${tags}</div>` : ''}<div class="lb-actions"><button class="lb-btn" onclick="GL.rename('${id}')">Rename</button><button class="lb-btn" onclick="GL.editTags('${id}')">Tags</button><button class="lb-btn" onclick="GL.moveItem('${id}')">Folder</button><button class="lb-btn" onclick="GL.toggleFav('${id}')">${item.favorite ? 'Unfavorite' : 'Favorite'}</button><button class="lb-btn lb-btn-danger" onclick="GL.deleteFromViewer('${id}')">Delete</button></div>`;
+      meta.innerHTML = `<div class="lb-meta-title">${esc(item.title || 'Untitled')}</div><div class="lb-meta-sub">${date} | ${kind}</div>${folderLine}${tags ? `<div class="lb-meta-sub">${tags}</div>` : ''}<div class="lb-actions"><button class="lb-btn" onclick="GL.rename('${id}')">Rename</button><button class="lb-btn" onclick="GL.editTags('${id}')">Tags</button><button class="lb-btn" onclick="GL.moveItem('${id}')">Folder</button><button class="lb-btn" onclick="GL.toggleFav('${id}')">${item.favorite ? 'Unfavorite' : 'Favorite'}</button><button class="lb-btn lb-btn-danger" onclick="GL.deleteFromViewer('${id}')">Delete</button></div>${window.WSLinks ? WSLinks.renderPanel({ app: 'gallery', id }) : ''}`;
     }
 
     if (kind === 'video') {
@@ -552,6 +552,10 @@ const GL = (function () {
 
   function setFolderFilter(value) {
     folderFilter = value || 'all';
+    render();
+  }
+  function openFolderFromLink(id) {
+    folderFilter = data && data.folders && data.folders.some(f => f.id === id) ? id : 'all';
     render();
   }
   function newFolder() {
@@ -700,6 +704,7 @@ const GL = (function () {
     setSearch,
     setTagFilter,
     setFolderFilter,
+    openFolderFromLink,
     newFolder,
     renameFolder,
     deleteFolder,

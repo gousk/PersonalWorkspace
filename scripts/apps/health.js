@@ -612,6 +612,7 @@ const HL = (function () {
           </label>
           <div class="hl-toolbar-note">Water reminder: ${reminder.enabled ? 'On' : 'Off'} / ${Math.round(num(reminder.intervalMin, 90))}m</div>
         </div>
+        ${window.WSLinks ? WSLinks.renderPanel({ app: 'health', id: `day:${selectedDate}` }) : ''}
 
         <div class="hl-grid">
           <section class="hl-card hl-card-wide hl-pane-calendar">
@@ -819,7 +820,9 @@ const HL = (function () {
       return;
     }
 
-    if (itemId.startsWith('food:') || itemId.startsWith('water:') || itemId.startsWith('weight:')) {
+    if (itemId.startsWith('day:')) {
+      selectedDate = itemId.slice(4);
+    } else if (itemId.startsWith('food:') || itemId.startsWith('water:') || itemId.startsWith('weight:')) {
       const parts = itemId.split(':');
       if (parts[1]) selectedDate = parts[1];
     }

@@ -125,6 +125,14 @@ Searches across:
 
 Search also supports tag filtering.
 
+### Cross-App Links
+
+Backlog tasks, notes, blog posts, gallery media, moodboards, calendar reminders, and health days can be linked to each other.
+
+- Open a record and use **Linked Items** to attach another workspace item.
+- Links are bidirectional, so linking a backlog task to a blog post also shows the backlink from the blog post.
+- Moodboard media that came from the Gallery and moodboard Gallery folders are surfaced as related items.
+
 ### Backup and Restore
 
 Manual backup writes workspace data to the selected backup folder.
@@ -163,6 +171,7 @@ Storage keys used by the app include:
 - `ws_moodboard`
 - `ws_calendar`
 - `ws_health`
+- `ws_links`
 - `ws_backup_settings`
 
 ## Project Structure

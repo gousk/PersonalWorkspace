@@ -78,7 +78,7 @@ const CL = (function () {
           minute: ev.time ? '2-digit' : undefined
         })
       : 'N/A';
-    return preMin > 0 ? `Main ${mainLabel} • + pre ${preMin}m` : `Main ${mainLabel}`;
+    return preMin > 0 ? `Main ${mainLabel} â€¢ + pre ${preMin}m` : `Main ${mainLabel}`;
   }
 
   function init() {
@@ -198,7 +198,8 @@ const CL = (function () {
             </div>
           </div>
           ${ev.notes ? `<div class="cl-card-notes">${esc(ev.notes)}</div>` : ''}
-          <div class="cl-card-foot"><span>Lead ${Number(ev.remindDays || 0)} day(s) • ${reminderMeta(ev)}</span><div class="cl-tags">${tags}</div></div>
+          ${window.WSLinks ? WSLinks.renderPanel({ app: 'calendar', id: ev.id }) : ''}
+          <div class="cl-card-foot"><span>Lead ${Number(ev.remindDays || 0)} day(s) | ${reminderMeta(ev)}</span><div class="cl-tags">${tags}</div></div>
         </div>`;
       })
       .join('');

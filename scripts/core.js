@@ -289,7 +289,9 @@ function buildGlobalIndex() {
   });
 
   const nutritionDays = (health.nutrition && health.nutrition.days) || {};
+  const healthDays = new Set();
   Object.keys(nutritionDays).forEach(day => {
+    healthDays.add(day);
     const dayItems = (nutritionDays[day] && nutritionDays[day].items) || [];
     dayItems.forEach(food => {
       const dts = Date.parse(`${day}T12:00`);
@@ -307,6 +309,7 @@ function buildGlobalIndex() {
 
   const waterDays = (health.water && health.water.days) || {};
   Object.keys(waterDays).forEach(day => {
+    healthDays.add(day);
     const dts = Date.parse(`${day}T12:00`);
     const ml = Number((waterDays[day] && waterDays[day].totalMl) || 0);
     items.push({
@@ -322,6 +325,7 @@ function buildGlobalIndex() {
   const weightEntries = (health.weight && health.weight.entries) || [];
   weightEntries.forEach(entry => {
     const day = String(entry.date || '').slice(0, 10);
+    if (day) healthDays.add(day);
     const dts = Date.parse(`${day}T12:00`);
     items.push({
       app: 'health',
@@ -329,6 +333,18 @@ function buildGlobalIndex() {
       title: `Weight ${day}`,
       snippet: `${Number(entry.kg || 0)} kg ${entry.note || ''}`.trim(),
       tags: ['health', 'weight'],
+      date: Number.isFinite(dts) ? dts : Date.now(),
+      page: 'health'
+    });
+  });
+  healthDays.forEach(day => {
+    const dts = Date.parse(`${day}T12:00`);
+    items.push({
+      app: 'health',
+      itemId: `day:${day}`,
+      title: `Health ${day}`,
+      snippet: 'Daily health log',
+      tags: ['health'],
       date: Number.isFinite(dts) ? dts : Date.now(),
       page: 'health'
     });
@@ -410,6 +426,352 @@ function globalSearchOpenResult(id) {
     if (item.app === 'health' && window.HL && HL.openFromSearch) HL.openFromSearch(item.itemId);
   }, 60);
 }
+
+const WSLinks = (function () {
+  const KEY = 'ws_links';
+  const LABELS = {
+    backlog: 'Backlog',
+    notes: 'Note',
+    blog: 'Blog',
+    gallery: 'Gallery',
+    moodboard: 'Moodboard',
+    calendar: 'Calendar',
+    health: 'Health',
+    'gallery-folder': 'Gallery Folder'
+  };
+  const REFRESH_DELAY = 80;
+  let pickerSource = null;
+  let pickerApp = 'all';
+
+  function load() {
+    const data = parseLS(KEY, { links: [] });
+    if (!data || !Array.isArray(data.links)) return { links: [] };
+    return data;
+  }
+  function save(data) {
+    if (window.WSStorage) return WSStorage.setJSON(KEY, data, { silent: true });
+    try {
+      localStorage.setItem(KEY, JSON.stringify(data));
+      return true;
+    } catch {
+      alert('Could not save links. Storage may be full.');
+      return false;
+    }
+  }
+  function normalizeRef(ref) {
+    if (!ref || !ref.app || !ref.id) return null;
+    return {
+      app: String(ref.app),
+      id: String(ref.id),
+      boardId: ref.boardId ? String(ref.boardId) : undefined
+    };
+  }
+  function keyOf(ref) {
+    const n = normalizeRef(ref);
+    return n ? `${n.app}:${n.id}` : '';
+  }
+  function sameRef(a, b) {
+    return keyOf(a) === keyOf(b);
+  }
+  function encodeRef(ref) {
+    return encodeURIComponent(JSON.stringify(normalizeRef(ref)));
+  }
+  function decodeRef(raw) {
+    try {
+      return normalizeRef(JSON.parse(decodeURIComponent(raw)));
+    } catch {
+      return null;
+    }
+  }
+  function domId(ref) {
+    return `ws-links-${keyOf(ref).replace(/[^a-z0-9_-]/gi, '-')}`;
+  }
+  function allLinks() {
+    return load().links.filter(link => link && link.source && link.target && link.id);
+  }
+  function linksFor(ref) {
+    const key = keyOf(ref);
+    if (!key) return [];
+    return allLinks().filter(link => keyOf(link.source) === key || keyOf(link.target) === key);
+  }
+  function otherRef(link, ref) {
+    return sameRef(link.source, ref) ? normalizeRef(link.target) : normalizeRef(link.source);
+  }
+  function alreadyLinked(a, b) {
+    const ak = keyOf(a);
+    const bk = keyOf(b);
+    if (!ak || !bk) return false;
+    return allLinks().some(link => {
+      const sk = keyOf(link.source);
+      const tk = keyOf(link.target);
+      return (sk === ak && tk === bk) || (sk === bk && tk === ak);
+    });
+  }
+  function appLabel(app) {
+    return LABELS[app] || String(app || 'Item');
+  }
+  function healthDayMeta(ref) {
+    const id = String(ref.id || '');
+    if (!id.startsWith('day:')) return null;
+    const day = id.slice(4);
+    return {
+      app: 'health',
+      itemId: id,
+      title: `Health ${day}`,
+      snippet: 'Daily health log',
+      tags: ['health'],
+      date: Date.parse(`${day}T12:00`) || Date.now(),
+      page: 'health'
+    };
+  }
+  function galleryFolderMeta(ref) {
+    if (ref.app !== 'gallery-folder') return null;
+    const gallery = parseLS('ws_gallery', { folders: [], items: [] });
+    const folder = (gallery.folders || []).find(f => f.id === ref.id);
+    if (!folder) return null;
+    const count = (gallery.items || []).filter(item => item.folderId === folder.id).length;
+    return {
+      app: 'gallery-folder',
+      itemId: folder.id,
+      title: folder.name || 'Gallery folder',
+      snippet: `${count} media item${count === 1 ? '' : 's'}`,
+      tags: ['gallery'],
+      date: folder.created || Date.now(),
+      page: 'gallery'
+    };
+  }
+  function metaFor(ref) {
+    const n = normalizeRef(ref);
+    if (!n) return null;
+    if (n.app === 'health') {
+      const day = healthDayMeta(n);
+      if (day) return day;
+    }
+    if (n.app === 'gallery-folder') return galleryFolderMeta(n);
+    return buildGlobalIndex().find(item => item.app === n.app && String(item.itemId) === n.id) || null;
+  }
+  function autoLinksFor(ref) {
+    const n = normalizeRef(ref);
+    if (!n) return [];
+    const links = [];
+    if (n.app === 'gallery') {
+      const moodboard = parseLS('ws_moodboard', { boards: [] });
+      (moodboard.boards || []).forEach(board => {
+        if ((board.items || []).some(item => item.galleryId === n.id)) {
+          links.push({
+            id: `auto-gallery-moodboard-${n.id}-${board.id}`,
+            virtual: true,
+            source: n,
+            target: { app: 'moodboard', id: board.id },
+            label: 'Used in moodboard'
+          });
+        }
+      });
+    }
+    if (n.app === 'moodboard') {
+      const gallery = parseLS('ws_gallery', { folders: [], items: [] });
+      const folder = (gallery.folders || []).find(f => f.moodboardId === n.id);
+      if (folder) {
+        links.push({
+          id: `auto-moodboard-gallery-${n.id}-${folder.id}`,
+          virtual: true,
+          source: n,
+          target: { app: 'gallery-folder', id: folder.id },
+          label: 'Gallery folder'
+        });
+      }
+    }
+    return links;
+  }
+  function linkRows(ref) {
+    const key = keyOf(ref);
+    const seen = new Set();
+    return linksFor(ref).concat(autoLinksFor(ref)).filter(link => {
+      const other = otherRef(link, ref);
+      const otherKey = keyOf(other);
+      if (!key || !otherKey || seen.has(otherKey)) return false;
+      seen.add(otherKey);
+      return true;
+    });
+  }
+  function panelInner(ref, options = {}) {
+    const n = normalizeRef(ref);
+    if (!n) return '';
+    const rows = linkRows(n);
+    const encoded = encodeRef(n);
+    const title = options.title || 'Linked Items';
+    const addLabel = options.addLabel || '+ Link';
+    const rowsHtml = rows.map(link => {
+      const other = otherRef(link, n);
+      const meta = metaFor(other);
+      const missing = !meta;
+      const label = link.label ? `<span class="ws-link-reason">${esc(link.label)}</span>` : '';
+      const remove = link.virtual ? '' : `<button class="ws-link-mini danger" onclick="event.stopPropagation();WSLinks.removeAndRefresh('${link.id}','${encoded}')">Remove</button>`;
+      return `
+        <div class="ws-link-row${missing ? ' missing' : ''}">
+          <button class="ws-link-main" onclick="WSLinks.openEncoded('${encodeRef(other)}')">
+            <span class="ws-link-app">${esc(appLabel(other.app))}</span>
+            <span class="ws-link-title">${esc(meta ? meta.title : 'Missing item')}</span>
+            <span class="ws-link-snippet">${esc(meta ? (meta.snippet || '') : keyOf(other))}</span>
+            ${label}
+          </button>
+          <div class="ws-link-actions">${remove}</div>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="ws-link-head">
+        <div class="section-title">${esc(title)}</div>
+        <button class="nav-btn ws-link-add" onclick="WSLinks.openPicker('${encoded}')">${esc(addLabel)}</button>
+      </div>
+      <div class="ws-link-list">${rowsHtml || '<div class="ws-link-empty">No linked items yet.</div>'}</div>`;
+  }
+  function renderPanel(ref, options = {}) {
+    const n = normalizeRef(ref);
+    if (!n) return '';
+    return `<div class="ws-links" id="${domId(n)}">${panelInner(n, options)}</div>`;
+  }
+  function refreshPanel(ref) {
+    const n = normalizeRef(ref);
+    if (!n) return;
+    const el = document.getElementById(domId(n));
+    if (el) el.innerHTML = panelInner(n);
+  }
+  function refreshSoon(ref) {
+    setTimeout(() => refreshPanel(ref), REFRESH_DELAY);
+  }
+  function addLink(source, target) {
+    const src = normalizeRef(source);
+    const tgt = normalizeRef(target);
+    if (!src || !tgt || sameRef(src, tgt) || alreadyLinked(src, tgt)) return false;
+    const data = load();
+    const now = Date.now();
+    data.links.push({ id: uid(), source: src, target: tgt, label: '', note: '', created: now, updated: now });
+    return save(data);
+  }
+  function remove(linkId) {
+    const data = load();
+    data.links = data.links.filter(link => link.id !== linkId);
+    save(data);
+  }
+  function removeAndRefresh(linkId, encodedRef) {
+    const ref = decodeRef(encodedRef);
+    remove(linkId);
+    refreshSoon(ref);
+  }
+  function openRef(ref) {
+    const n = normalizeRef(ref);
+    if (!n) return;
+    if (n.app === 'gallery-folder') {
+      navigateTo('gallery');
+      setTimeout(() => {
+        if (window.GL && GL.openFolderFromLink) GL.openFolderFromLink(n.id);
+      }, 80);
+      return;
+    }
+    const page = n.app === 'notes' ? 'notes' : n.app;
+    navigateTo(page);
+    setTimeout(() => {
+      if (n.app === 'backlog' && window.BL && BL.openFromSearch) BL.openFromSearch(n.id, n.boardId);
+      if (n.app === 'notes' && window.NT && NT.openFromSearch) NT.openFromSearch(n.id);
+      if (n.app === 'blog' && window.BG && BG.openFromSearch) BG.openFromSearch(n.id);
+      if (n.app === 'gallery' && window.GL && GL.openFromSearch) GL.openFromSearch(n.id);
+      if (n.app === 'moodboard' && window.MB && MB.openFromSearch) MB.openFromSearch(n.id);
+      if (n.app === 'calendar' && window.CL && CL.openFromSearch) CL.openFromSearch(n.id);
+      if (n.app === 'health' && window.HL && HL.openFromSearch) HL.openFromSearch(n.id);
+    }, 80);
+  }
+  function openEncoded(encodedRef) {
+    closeModal();
+    closeLightbox();
+    openRef(decodeRef(encodedRef));
+  }
+  function linkableItems() {
+    const map = new Map();
+    buildGlobalIndex().forEach(item => {
+      const ref = normalizeRef({ app: item.app, id: item.itemId, boardId: item.boardId });
+      if (!ref) return;
+      map.set(keyOf(ref), { ...item, ref });
+    });
+    return [...map.values()];
+  }
+  function renderPickerResults(term = '') {
+    const root = document.getElementById('ws-link-picker-results');
+    if (!root || !pickerSource) return;
+    const q = String(term || '').trim().toLowerCase();
+    const rows = linkableItems()
+      .filter(item => {
+        if (sameRef(item.ref, pickerSource)) return false;
+        if (alreadyLinked(item.ref, pickerSource)) return false;
+        if (pickerApp !== 'all' && item.app !== pickerApp) return false;
+        if (!q) return true;
+        const hay = `${item.title} ${item.snippet} ${(item.tags || []).join(' ')} ${item.app}`.toLowerCase();
+        return hay.includes(q);
+      })
+      .sort((a, b) => (b.date || 0) - (a.date || 0))
+      .slice(0, 80);
+    root.innerHTML = rows.length ? rows.map(item => `
+      <button class="ws-picker-row" onclick="WSLinks.pickTarget('${encodeRef(item.ref)}')">
+        <span class="ws-link-app">${esc(appLabel(item.app))}</span>
+        <strong>${esc(item.title || 'Untitled')}</strong>
+        <span>${esc(item.snippet || '')}</span>
+      </button>`).join('') : '<div class="ws-link-empty">No available items found.</div>';
+  }
+  function setPickerApp(app) {
+    pickerApp = app || 'all';
+    const input = document.getElementById('ws-link-picker-search');
+    renderPickerResults(input ? input.value : '');
+  }
+  function openPicker(encodedSource) {
+    pickerSource = decodeRef(encodedSource);
+    pickerApp = 'all';
+    if (!pickerSource) return;
+    const body = `
+      <div class="ws-link-picker">
+        <div class="ws-picker-tools">
+          <input id="ws-link-picker-search" class="modal-input" placeholder="Search workspace..." oninput="WSLinks.renderPickerResults(this.value)">
+          <select class="modal-input" onchange="WSLinks.setPickerApp(this.value)">
+            <option value="all">All apps</option>
+            <option value="backlog">Backlog</option>
+            <option value="notes">Notes</option>
+            <option value="blog">Blog</option>
+            <option value="gallery">Gallery</option>
+            <option value="moodboard">Moodboard</option>
+            <option value="calendar">Calendar</option>
+            <option value="health">Health</option>
+          </select>
+        </div>
+        <div id="ws-link-picker-results" class="ws-picker-results"></div>
+      </div>`;
+    openCustomModal('Link Workspace Item', body, null, { showSave: false });
+    setTimeout(() => {
+      const input = document.getElementById('ws-link-picker-search');
+      if (input) input.focus();
+      renderPickerResults('');
+    }, 20);
+  }
+  function pickTarget(encodedTarget) {
+    const target = decodeRef(encodedTarget);
+    if (!pickerSource || !target) return;
+    addLink(pickerSource, target);
+    const source = pickerSource;
+    closeModal();
+    refreshSoon(source);
+  }
+
+  return {
+    getLinksFor: linksFor,
+    renderPanel,
+    refreshPanel,
+    openPicker,
+    renderPickerResults,
+    setPickerApp,
+    pickTarget,
+    openRef,
+    openEncoded,
+    removeAndRefresh
+  };
+})();
 
 
 const WSReminders = (function () {
@@ -661,7 +1023,7 @@ const WSReminders = (function () {
 
 WSReminders.start();
 const WSBackup = (function () {
-  const DATA_KEYS = ['ws_backlog', 'ws_notes', 'ws_blog', 'ws_gallery', 'ws_moodboard', 'ws_calendar', 'ws_health', 'ws_calendar_reminder_log', 'ws_calendar_reminder_snooze'];
+  const DATA_KEYS = ['ws_backlog', 'ws_notes', 'ws_blog', 'ws_gallery', 'ws_moodboard', 'ws_calendar', 'ws_health', 'ws_links', 'ws_calendar_reminder_log', 'ws_calendar_reminder_snooze'];
   const SETTINGS_KEY = 'ws_backup_settings';
   const DB_NAME = 'workspace_backup_handles';
   const DB_STORE = 'handles';
@@ -1025,6 +1387,7 @@ window.closeGlobalSearch = closeGlobalSearch;
 window.runGlobalSearch = runGlobalSearch;
 window.globalSearchOpenResult = globalSearchOpenResult;
 window.selectGlobalTag = selectGlobalTag;
+window.WSLinks = WSLinks;
 window.WSBackup = WSBackup;
 window.WSReminders = WSReminders;
 window.WSStorage = { setItem: safeSetLSRaw, setJSON: safeSetLSJSON, usage: estimateStorageUsage };
