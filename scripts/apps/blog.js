@@ -132,6 +132,7 @@ const BG = (function () {
     root.innerHTML = `
       <div class="bg-wrap">
         <div class="bg-toolbar">
+          <div class="app-title">Blog</div>
           <span style="font-size:11px;color:var(--g4)">Published <strong style="color:var(--g2)">${pub}</strong></span>
           <span style="font-size:11px;color:var(--g4)">Drafts <strong style="color:var(--g2)">${drf}</strong></span>
           <input class="ti" style="max-width:260px" placeholder="Search posts..." value="${esc(listSearch)}" oninput="BG.setSearch(this.value)">
@@ -143,7 +144,6 @@ const BG = (function () {
           <button class="nav-btn" onclick="BG.clearFilters()">Clear</button>
         </div>
         <div class="bg-list">
-          <div class="bg-list-title">All Posts</div>
           <div class="bg-grid">${cards || '<div class="bg-list-empty">No posts found for this filter.</div>'}<button class="bg-new-post" onclick="BG.create()">+ New Post</button></div>
         </div>
       </div>`;

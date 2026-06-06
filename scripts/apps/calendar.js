@@ -311,6 +311,7 @@ const CL = (function () {
     root.innerHTML = `
       <div class="cl-wrap">
         <div class="cl-toolbar">
+          <div class="app-title">Calendar</div>
           <span>Open <strong>${openCount}</strong></span>
           <span>Upcoming <strong>${upcomingCount}</strong></span>
           <span>Done <strong>${doneCount}</strong></span>

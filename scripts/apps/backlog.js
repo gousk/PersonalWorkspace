@@ -136,7 +136,7 @@ const BL = (function () {
     curBoard = null;
     archiveOpen = false;
     const root = document.getElementById('page-backlog');
-    let html = `<div class="bl-hub-bar"><span>Boards <strong>${data.boards.length}</strong></span><span>Items <strong>${data.boards.reduce((s, b) => s + b.tasks.length, 0)}</strong></span></div><div class="bl-hub"><div class="bl-hub-title">All Boards</div><div class="bl-hub-grid">`;
+    let html = `<div class="bl-hub-bar"><div class="app-title">Backlog</div><span>Boards <strong>${data.boards.length}</strong></span><span>Items <strong>${data.boards.reduce((s, b) => s + b.tasks.length, 0)}</strong></span></div><div class="bl-hub"><div class="bl-hub-grid">`;
     data.boards.forEach(b => {
       const total = b.tasks.length;
       const doneCol = b.columns.find(c => c.isDone);
@@ -192,7 +192,7 @@ const BL = (function () {
     });
 
     const boardLinksHtml = window.WSLinks ? `<div class="bl-board-links">${WSLinks.renderPanel({ app: 'backlog', id: `board:${board.id}`, boardId: board.id }, { title: 'Linked Board Items' })}</div>` : '';
-    root.innerHTML = `<div class="bl-board-nav"><button class="nav-btn" onclick="BL.goHub()">&#8592; Boards</button><span class="bl-sep">|</span><span class="bl-bnd">${esc(board.name)}</span><div class="bl-nav-right"><button class="nav-btn" onclick="BL.toggleArchive()">Archive <span class="bl-archive-badge" id="bl-arc-count">${board.archive.length}</span></button><button class="nav-btn" onclick="BL.openColMgr()">Columns</button></div></div><div class="bl-stats-bar">${statsHtml}</div><div class="bl-prog-wrap"><span>${pct}%</span><div class="bl-prog-track"><div class="bl-prog-fill" style="width:${pct}%"></div></div></div>${boardLinksHtml}<div class="bl-columns" id="bl-columns">${colsHtml}</div><div class="bl-archive-drawer${archiveOpen ? ' open' : ''}" id="bl-archive-drawer"><div class="bl-archive-head"><span>Archived Items</span><button class="nav-btn" onclick="BL.toggleArchive()" style="font-size:10px;padding:3px 10px;">Close</button></div><div class="bl-archive-list" id="bl-archive-list"></div></div>`;
+    root.innerHTML = `<div class="bl-board-nav"><div class="app-title">Backlog</div><button class="nav-btn" onclick="BL.goHub()">&#8592; Boards</button><span class="bl-sep">|</span><span class="bl-bnd">${esc(board.name)}</span><div class="bl-nav-right"><button class="nav-btn" onclick="BL.toggleArchive()">Archive <span class="bl-archive-badge" id="bl-arc-count">${board.archive.length}</span></button><button class="nav-btn" onclick="BL.openColMgr()">Columns</button></div></div><div class="bl-stats-bar">${statsHtml}</div><div class="bl-prog-wrap"><span>${pct}%</span><div class="bl-prog-track"><div class="bl-prog-fill" style="width:${pct}%"></div></div></div>${boardLinksHtml}<div class="bl-columns" id="bl-columns">${colsHtml}</div><div class="bl-archive-drawer${archiveOpen ? ' open' : ''}" id="bl-archive-drawer"><div class="bl-archive-head"><span>Archived Items</span><button class="nav-btn" onclick="BL.toggleArchive()" style="font-size:10px;padding:3px 10px;">Close</button></div><div class="bl-archive-list" id="bl-archive-list"></div></div>`;
 
     function clearIndicators() {
       root.querySelectorAll('.bl-card.drop-before').forEach(c => c.classList.remove('drop-before'));

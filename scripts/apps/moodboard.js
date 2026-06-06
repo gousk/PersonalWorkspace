@@ -137,7 +137,7 @@ const MB = (function () {
     selectedId = null;
     const root = document.getElementById('page-moodboard');
     const totalItems = data.boards.reduce((s, b) => s + b.items.length, 0);
-    let html = `<div class="mb-hub-bar"><span>Boards <strong>${data.boards.length}</strong></span><span>Items <strong>${totalItems}</strong></span></div><div class="mb-hub"><div class="mb-hub-title">All Moodboards</div><div class="mb-hub-grid">`;
+    let html = `<div class="mb-hub-bar"><div class="app-title">Moodboard</div><span>Boards <strong>${data.boards.length}</strong></span><span>Items <strong>${totalItems}</strong></span></div><div class="mb-hub"><div class="mb-hub-grid">`;
     data.boards.forEach(b => {
       const previews = b.items.filter(x => x.type !== 'text').slice(0, 4);
       const cells = previews.map(it => it.type === 'video'
@@ -199,6 +199,7 @@ const MB = (function () {
     const txtN = b.items.filter(x => x.type === 'text').length;
     root.innerHTML = `
       <div class="mb-board-nav">
+        <div class="app-title">Moodboard</div>
         <button class="nav-btn" onclick="MB.goHub()">&#8592; Boards</button>
         <span class="bl-sep">|</span>
         <span class="bl-bnd">${esc(b.name)}</span>

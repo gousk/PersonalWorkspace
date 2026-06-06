@@ -271,6 +271,7 @@ const GL = (function () {
     root.innerHTML = `
       <div class="gl-wrap">
         <div class="gl-toolbar">
+          <div class="app-title">Gallery</div>
           <div class="gl-toolbar-main">
             <div class="gl-stat-group">
               <span>Media <strong>${all.length}</strong></span>
@@ -299,7 +300,13 @@ const GL = (function () {
           </div>
         </div>
         <div class="gl-list">
-          <div class="gl-list-title">Gallery${folderFilter !== 'all' && folderFilter !== 'root' ? ` <span class="gl-list-sub">/ ${esc(folderName(folderFilter))}</span>` : folderFilter === 'root' ? ' <span class="gl-list-sub">/ Root</span>' : ''}${selectedCount ? ` <span class="gl-list-sub">/ ${selectedCount} selected</span>` : ''}</div>
+          ${(() => {
+            const parts = [
+              folderFilter !== 'all' && folderFilter !== 'root' ? esc(folderName(folderFilter)) : folderFilter === 'root' ? 'Root' : '',
+              selectedCount ? `${selectedCount} selected` : ''
+            ].filter(Boolean);
+            return parts.length ? `<div class="gl-list-title">${parts.join(' <span class="gl-list-sub">/</span> ')}</div>` : '';
+          })()}
           <div class="gl-filter-strip">${tagFilters}</div>
           <div class="gl-grid">${cards || '<div class="gl-empty">No media here. Upload to populate this view.</div>'}</div>
         </div>
