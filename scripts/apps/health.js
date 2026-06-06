@@ -44,6 +44,32 @@ const HL = (function () {
     return String(n);
   }
 
+  function foodQty(item) {
+    return Math.max(0, num(item && item.qty, 1));
+  }
+
+  function foodTotal(item, field) {
+    return num(item && item[field]) * foodQty(item);
+  }
+
+  function normalizeFood(item) {
+    const src = item && typeof item === 'object' ? item : {};
+    return {
+      id: src.id || uid(),
+      name: String(src.name || '').trim() || 'Food',
+      qty: Math.max(0, num(src.qty, 1) || 1),
+      calories: Math.max(0, num(src.calories)),
+      protein: Math.max(0, num(src.protein)),
+      carbs: Math.max(0, num(src.carbs)),
+      fat: Math.max(0, num(src.fat)),
+      fiber: Math.max(0, num(src.fiber)),
+      sodium: Math.max(0, num(src.sodium)),
+      potassium: Math.max(0, num(src.potassium)),
+      created: Number(src.created || Date.now()),
+      updated: Number(src.updated || src.created || Date.now())
+    };
+  }
+
   function load() {
     try { return JSON.parse(localStorage.getItem(SK)) || null; }
     catch { return null; }
@@ -61,8 +87,19 @@ const HL = (function () {
     if (!data.profile) {
       data.profile = { sex: 'male', age: 28, heightCm: 175, weightKg: 75, activity: 'moderate', goalMode: 'maintain', goalDelta: 400 };
     }
+    if (data.profile.sodiumTargetMg == null) data.profile.sodiumTargetMg = 2300;
+    if (data.profile.potassiumTargetMg == null) data.profile.potassiumTargetMg = 3500;
+    if (data.profile.fiberTargetG == null) data.profile.fiberTargetG = 30;
 
     if (!data.nutrition || !data.nutrition.days) data.nutrition = { days: {} };
+    if (!Array.isArray(data.nutrition.presets)) data.nutrition.presets = [];
+    data.nutrition.presets = data.nutrition.presets.map(normalizeFood);
+    Object.keys(data.nutrition.days || {}).forEach(day => {
+      if (!data.nutrition.days[day] || !Array.isArray(data.nutrition.days[day].items)) {
+        data.nutrition.days[day] = { items: [] };
+      }
+      data.nutrition.days[day].items = data.nutrition.days[day].items.map(normalizeFood);
+    });
     if (!data.activity || !data.activity.days) data.activity = { days: {} };
 
     if (!data.water || typeof data.water !== 'object') data.water = {};
@@ -99,6 +136,9 @@ const HL = (function () {
     if (!data.water.days[day]) data.water.days[day] = { totalMl: 0, logs: [] };
     if (data.water.days[day].totalMl == null) data.water.days[day].totalMl = 0;
     if (!Array.isArray(data.water.days[day].logs)) data.water.days[day].logs = [];
+    data.water.days[day].logs = data.water.days[day].logs
+      .filter(log => log && num(log.ml) > 0)
+      .map(log => ({ id: log.id || uid(), ml: Math.max(0, Math.round(num(log.ml))), at: Number(log.at || Date.now()) }));
 
     return { nutrition: data.nutrition.days[day], activity: data.activity.days[day], water: data.water.days[day] };
   }
@@ -121,7 +161,16 @@ const HL = (function () {
     const delta = Math.max(0, num(p.goalDelta, 0));
     if (p.goalMode === 'cut') target = tdee - delta;
     if (p.goalMode === 'bulk') target = tdee + delta;
-    return { bmr, tdee, target, proteinTarget: Math.max(60, num(p.weightKg, 75) * 1.8), waterTarget: Math.max(1000, num(data.water.targetMl, 2500)) };
+    return {
+      bmr,
+      tdee,
+      target,
+      proteinTarget: Math.max(60, num(p.weightKg, 75) * 1.8),
+      fiberTarget: Math.max(1, num(p.fiberTargetG, 30)),
+      waterTarget: Math.max(1000, num(data.water.targetMl, 2500)),
+      sodiumTarget: Math.max(1, num(p.sodiumTargetMg, 2300)),
+      potassiumTarget: Math.max(1, num(p.potassiumTargetMg, 3500))
+    };
   }
 
   function calcBurn(steps, workoutMin, extraBurn) {
@@ -136,12 +185,15 @@ const HL = (function () {
     const activity = (((data.activity || {}).days || {})[day]) || {};
     const water = (((data.water || {}).days || {})[day]) || {};
 
-    let calories = 0, protein = 0, carbs = 0, fat = 0;
+    let calories = 0, protein = 0, carbs = 0, fat = 0, fiber = 0, sodium = 0, potassium = 0;
     foods.forEach(it => {
-      calories += num(it.calories);
-      protein += num(it.protein);
-      carbs += num(it.carbs);
-      fat += num(it.fat);
+      calories += foodTotal(it, 'calories');
+      protein += foodTotal(it, 'protein');
+      carbs += foodTotal(it, 'carbs');
+      fat += foodTotal(it, 'fat');
+      fiber += foodTotal(it, 'fiber');
+      sodium += foodTotal(it, 'sodium');
+      potassium += foodTotal(it, 'potassium');
     });
 
     const steps = num(activity.steps);
@@ -149,14 +201,14 @@ const HL = (function () {
     const extraBurn = num(activity.extraBurn);
     const waterMl = num(water.totalMl);
     const burn = calcBurn(steps, workoutMin, extraBurn);
-    const hasData = calories > 0 || protein > 0 || carbs > 0 || fat > 0 || steps > 0 || workoutMin > 0 || extraBurn > 0 || waterMl > 0;
+    const hasData = calories > 0 || protein > 0 || carbs > 0 || fat > 0 || fiber > 0 || sodium > 0 || potassium > 0 || steps > 0 || workoutMin > 0 || extraBurn > 0 || waterMl > 0;
 
-    return { day, calories, protein, carbs, fat, steps, workoutMin, extraBurn, waterMl, burn, net: calories - burn, hasData };
+    return { day, calories, protein, carbs, fat, fiber, sodium, potassium, steps, workoutMin, extraBurn, waterMl, burn, net: calories - burn, hasData };
   }
 
   function dayNutritionTotals(day = selectedDate) {
     const s = getDaySnapshot(day);
-    return { calories: s.calories, protein: s.protein, carbs: s.carbs, fat: s.fat };
+    return { calories: s.calories, protein: s.protein, carbs: s.carbs, fat: s.fat, fiber: s.fiber, sodium: s.sodium, potassium: s.potassium };
   }
 
   function dayActivityBurn(day = selectedDate) { return getDaySnapshot(day).burn; }
@@ -266,27 +318,59 @@ const HL = (function () {
 
   function updateProfile(field, value) {
     if (!data.profile) return;
-    if (['age', 'heightCm', 'weightKg', 'goalDelta'].includes(field)) data.profile[field] = num(value, data.profile[field]);
+    if (['age', 'heightCm', 'weightKg', 'goalDelta', 'sodiumTargetMg', 'potassiumTargetMg', 'fiberTargetG'].includes(field)) data.profile[field] = num(value, data.profile[field]);
     else data.profile[field] = value;
     persist();
     render();
   }
 
-  function addFood() {
-    const name = (document.getElementById('hl-food-name')?.value || '').trim();
-    if (!name) return;
+  function foodInputHtml(prefix, item = {}, withPreset = true) {
+    return `
+      <div class="hl-editor-grid">
+        <label>Name<input id="${prefix}-name" class="modal-input" type="text" value="${esc(item.name || '')}" placeholder="Food name"></label>
+        <label>Qty<input id="${prefix}-qty" class="modal-input" type="number" min="0.25" step="0.25" value="${esc(item.qty == null ? 1 : item.qty)}"></label>
+        <label>Kcal<input id="${prefix}-cal" class="modal-input" type="number" min="0" step="1" value="${esc(item.calories || '')}"></label>
+        <label>Protein (g)<input id="${prefix}-p" class="modal-input" type="number" min="0" step="0.1" value="${esc(item.protein || '')}"></label>
+        <label>Carbs (g)<input id="${prefix}-c" class="modal-input" type="number" min="0" step="0.1" value="${esc(item.carbs || '')}"></label>
+        <label>Fat (g)<input id="${prefix}-f" class="modal-input" type="number" min="0" step="0.1" value="${esc(item.fat || '')}"></label>
+        <label>Fiber (g)<input id="${prefix}-fiber" class="modal-input" type="number" min="0" step="0.1" value="${esc(item.fiber || '')}"></label>
+        <label>Sodium (mg)<input id="${prefix}-na" class="modal-input" type="number" min="0" step="1" value="${esc(item.sodium || '')}"></label>
+        <label>Potassium (mg)<input id="${prefix}-k" class="modal-input" type="number" min="0" step="1" value="${esc(item.potassium || '')}"></label>
+      </div>
+      ${withPreset ? '<label class="hl-preset-toggle hl-editor-check"><input id="' + prefix + '-preset" type="checkbox"><span class="hl-preset-switch"></span><span>Save as preset</span></label>' : ''}`;
+  }
 
-    const item = {
-      id: uid(),
+  function readFoodInputs(prefix, base = {}) {
+    const name = (document.getElementById(`${prefix}-name`)?.value || '').trim();
+    if (!name) return null;
+    return normalizeFood({
+      ...base,
       name,
-      calories: num(document.getElementById('hl-food-cal')?.value),
-      protein: num(document.getElementById('hl-food-p')?.value),
-      carbs: num(document.getElementById('hl-food-c')?.value),
-      fat: num(document.getElementById('hl-food-f')?.value),
-      created: Date.now()
-    };
+      qty: num(document.getElementById(`${prefix}-qty`)?.value, 1),
+      calories: num(document.getElementById(`${prefix}-cal`)?.value),
+      protein: num(document.getElementById(`${prefix}-p`)?.value),
+      carbs: num(document.getElementById(`${prefix}-c`)?.value),
+      fat: num(document.getElementById(`${prefix}-f`)?.value),
+      fiber: num(document.getElementById(`${prefix}-fiber`)?.value),
+      sodium: num(document.getElementById(`${prefix}-na`)?.value),
+      potassium: num(document.getElementById(`${prefix}-k`)?.value)
+    });
+  }
+
+  function savePresetFromFood(food, existingId = '') {
+    const preset = normalizeFood({ ...food, id: existingId || uid(), created: food.created || Date.now(), updated: Date.now() });
+    if (!data.nutrition.presets) data.nutrition.presets = [];
+    const idx = existingId ? data.nutrition.presets.findIndex(x => x.id === existingId) : -1;
+    if (idx >= 0) data.nutrition.presets[idx] = preset;
+    else data.nutrition.presets.unshift(preset);
+  }
+
+  function addFood() {
+    const item = readFoodInputs('hl-food', { id: uid(), created: Date.now(), updated: Date.now() });
+    if (!item) return;
 
     getDay().nutrition.items.unshift(item);
+    if (document.getElementById('hl-food-preset')?.checked) savePresetFromFood(item);
     persist();
     render();
   }
@@ -296,6 +380,110 @@ const HL = (function () {
     day.nutrition.items = day.nutrition.items.filter(x => x.id !== id);
     persist();
     render();
+  }
+
+  function setFoodQty(id, qty) {
+    const item = getDay().nutrition.items.find(x => x.id === id);
+    if (!item) return;
+    item.qty = Math.max(0.25, num(qty, foodQty(item)));
+    item.updated = Date.now();
+    persist();
+    render();
+  }
+
+  function adjustFoodQty(id, delta) {
+    const item = getDay().nutrition.items.find(x => x.id === id);
+    if (!item) return;
+    setFoodQty(id, foodQty(item) + delta);
+  }
+
+  function openFoodEditor(title, item, onSave, withPreset = true) {
+    openCustomModal(title, foodInputHtml('hl-edit-food', item, withPreset), () => {
+      const next = readFoodInputs('hl-edit-food', item);
+      if (!next) {
+        alert('Food name is required.');
+        return false;
+      }
+      onSave(next);
+      if (withPreset && document.getElementById('hl-edit-food-preset')?.checked) savePresetFromFood(next);
+      persist();
+      render();
+      return true;
+    });
+    setTimeout(() => document.getElementById('hl-edit-food-name')?.focus(), 20);
+  }
+
+  function editFood(id) {
+    const item = getDay().nutrition.items.find(x => x.id === id);
+    if (!item) return;
+    openFoodEditor('Edit Food', item, next => {
+      const list = getDay().nutrition.items;
+      const idx = list.findIndex(x => x.id === id);
+      if (idx >= 0) list[idx] = normalizeFood({ ...next, id, created: item.created || Date.now(), updated: Date.now() });
+    });
+  }
+
+  function duplicateFood(id) {
+    const item = getDay().nutrition.items.find(x => x.id === id);
+    if (!item) return;
+    getDay().nutrition.items.unshift(normalizeFood({ ...item, id: uid(), created: Date.now(), updated: Date.now() }));
+    persist();
+    render();
+  }
+
+  function saveFoodAsPreset(id) {
+    const item = getDay().nutrition.items.find(x => x.id === id);
+    if (!item) return;
+    savePresetFromFood(item);
+    persist();
+    render();
+  }
+
+  function quickLogPreset(id) {
+    const preset = (data.nutrition.presets || []).find(x => x.id === id);
+    if (!preset) return;
+    getDay().nutrition.items.unshift(normalizeFood({ ...preset, id: uid(), created: Date.now(), updated: Date.now() }));
+    persist();
+    render();
+  }
+
+  function managePresets() {
+    const presets = data.nutrition.presets || [];
+    const list = presets.length ? presets.map(preset => `
+      <div class="hl-preset-row">
+        <div>
+          <div class="hl-row-title">${esc(preset.name)}</div>
+          <div class="hl-row-sub">Qty ${foodQty(preset)} / ${Math.round(num(preset.calories))} kcal / Fiber ${Math.round(num(preset.fiber))}g / Na ${Math.round(num(preset.sodium))}mg / K ${Math.round(num(preset.potassium))}mg</div>
+        </div>
+        <div class="hl-preset-actions">
+          <button class="nav-btn" onclick="HL.quickLogPreset('${preset.id}')">Log</button>
+          <button class="nav-btn" onclick="HL.editPreset('${preset.id}')">Edit</button>
+          <button class="nav-btn" onclick="HL.deletePreset('${preset.id}')">Delete</button>
+        </div>
+      </div>`).join('') : '<div class="hl-empty">No presets yet.</div>';
+    const body = `<div class="hl-presets-modal"><div class="hl-preset-actions top"><button class="fb btn-s" onclick="HL.addPreset()">Add Preset</button></div>${list}</div>`;
+    openCustomModal('Manage Presets', body, null, { showSave: false });
+  }
+
+  function addPreset() {
+    openFoodEditor('New Preset', { qty: 1 }, next => {
+      savePresetFromFood(next);
+    }, false);
+  }
+
+  function editPreset(id) {
+    const preset = (data.nutrition.presets || []).find(x => x.id === id);
+    if (!preset) return;
+    openFoodEditor('Edit Preset', preset, next => {
+      savePresetFromFood(next, id);
+    }, false);
+  }
+
+  function deletePreset(id) {
+    if (!confirm('Delete this preset?')) return;
+    data.nutrition.presets = (data.nutrition.presets || []).filter(x => x.id !== id);
+    persist();
+    managePresets();
   }
 
   function updateActivity(field, value) {
@@ -327,6 +515,16 @@ const HL = (function () {
     const day = getDay();
     day.water.totalMl = 0;
     day.water.logs = [];
+    persist();
+    render();
+  }
+
+  function removeWaterLog(id) {
+    const day = getDay();
+    const log = day.water.logs.find(x => x.id === id);
+    if (!log) return;
+    day.water.logs = day.water.logs.filter(x => x.id !== id);
+    day.water.totalMl = Math.max(0, num(day.water.totalMl) - num(log.ml));
     persist();
     render();
   }
@@ -594,7 +792,6 @@ const HL = (function () {
     const totals = dayNutritionTotals();
     const burn = dayActivityBurn();
     const targets = calcTargets();
-    const net = totals.calories - burn;
     const waterTotal = num(day.water.totalMl);
     const waterTarget = Math.max(1000, num(data.water.targetMl, 2500));
     const waterProgress = hydrationPct();
@@ -602,6 +799,45 @@ const HL = (function () {
     const latestWeight = latestWeightEntry();
     const change7 = weightChangeFrom(7);
     const change30 = weightChangeFrom(30);
+    const calorieTarget = Math.max(1, num(targets.target, 0));
+    const proteinTarget = Math.max(1, num(targets.proteinTarget, 60));
+    const fiberTarget = Math.max(1, num(targets.fiberTarget, 30));
+    const sodiumTarget = Math.max(1, num(targets.sodiumTarget, 2300));
+    const potassiumTarget = Math.max(1, num(targets.potassiumTarget, 3500));
+    const caloriesRemaining = calorieTarget - totals.calories;
+    const calorieProgress = Math.max(0, Math.min(100, Math.round((totals.calories / calorieTarget) * 100)));
+    const proteinProgress = Math.max(0, Math.min(100, Math.round((totals.protein / proteinTarget) * 100)));
+    const fiberProgress = Math.max(0, Math.min(100, Math.round((totals.fiber / fiberTarget) * 100)));
+    const sodiumProgress = Math.max(0, Math.min(100, Math.round((totals.sodium / sodiumTarget) * 100)));
+    const potassiumProgress = Math.max(0, Math.min(100, Math.round((totals.potassium / potassiumTarget) * 100)));
+    const presetChips = (data.nutrition.presets || []).slice(0, 10).map(preset => `<button class="hl-chip" onclick="HL.quickLogPreset('${preset.id}')">${esc(preset.name)}</button>`).join('');
+    const foodRows = day.nutrition.items.length ? day.nutrition.items.map(item => `
+      <div class="hl-row-item">
+        <div>
+          <div class="hl-row-title">${esc(item.name)}</div>
+          <div class="hl-row-sub">Serving: ${Math.round(num(item.calories))} kcal / P ${Math.round(num(item.protein))} / C ${Math.round(num(item.carbs))} / F ${Math.round(num(item.fat))} / Fiber ${Math.round(num(item.fiber))}g / Na ${Math.round(num(item.sodium))}mg / K ${Math.round(num(item.potassium))}mg</div>
+          <div class="hl-row-sub">Total: ${Math.round(foodTotal(item, 'calories'))} kcal / P ${Math.round(foodTotal(item, 'protein'))} / C ${Math.round(foodTotal(item, 'carbs'))} / F ${Math.round(foodTotal(item, 'fat'))} / Fiber ${Math.round(foodTotal(item, 'fiber'))}g</div>
+        </div>
+        <div class="hl-row-right">
+          <div class="hl-qty-stepper">
+            <button class="nav-btn" onclick="HL.adjustFoodQty('${item.id}', -1)">-</button>
+            <input class="ti" type="number" min="0.25" step="0.25" value="${foodQty(item)}" onchange="HL.setFoodQty('${item.id}', this.value)">
+            <button class="nav-btn" onclick="HL.adjustFoodQty('${item.id}', 1)">+</button>
+          </div>
+          <div class="hl-row-actions">
+            <button class="nav-btn" onclick="HL.editFood('${item.id}')">Edit</button>
+            <button class="nav-btn" onclick="HL.duplicateFood('${item.id}')">Duplicate</button>
+            <button class="nav-btn" onclick="HL.saveFoodAsPreset('${item.id}')">Preset</button>
+            <button class="nav-btn" onclick="HL.removeFood('${item.id}')">Delete</button>
+          </div>
+        </div>
+      </div>
+    `).join('') : '<div class="hl-empty">No foods logged for this day.</div>';
+    const waterLogs = day.water.logs.length ? day.water.logs.map(log => `<div class="hl-log"><strong>${Math.round(num(log.ml))} ml</strong><span>${new Date(log.at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</span><button class="hl-log-remove" onclick="HL.removeWaterLog('${log.id}')" title="Remove water log">x</button></div>`).join('') : '<div class="hl-empty">No water logs yet.</div>';
+    const dayLinkRef = { app: 'health', id: `day:${selectedDate}` };
+    const dayLinks = window.WSLinks && WSLinks.hasLinks(dayLinkRef)
+      ? `<section class="hl-card hl-card-wide hl-pane-links">${WSLinks.renderPanel(dayLinkRef, { title: 'Linked Items' })}</section>`
+      : '';
 
     page.innerHTML = `
       <div class="hl-wrap">
@@ -611,10 +847,11 @@ const HL = (function () {
             <input class="ti hl-date" type="date" value="${selectedDate}" onchange="HL.setDate(this.value)">
           </label>
           <div class="hl-toolbar-note">Water reminder: ${reminder.enabled ? 'On' : 'Off'} / ${Math.round(num(reminder.intervalMin, 90))}m</div>
+          ${window.WSLinks ? `<button class="nav-btn" onclick="WSLinks.openFor({app:'health',id:'day:${selectedDate}'})">+ Link</button>` : ''}
         </div>
-        ${window.WSLinks ? WSLinks.renderPanel({ app: 'health', id: `day:${selectedDate}` }) : ''}
 
         <div class="hl-grid">
+          ${dayLinks}
           <section class="hl-card hl-card-wide hl-pane-calendar">
             <div class="hl-card-title">Health Calendar</div>
             <div class="hl-cal-head">
@@ -680,12 +917,24 @@ const HL = (function () {
               <label>Water Target (ml)
                 <input class="ti" type="number" min="1000" max="8000" value="${Math.round(waterTarget)}" onchange="HL.setWaterTarget(this.value)">
               </label>
+              <label>Fiber Target (g)
+                <input class="ti" type="number" min="1" max="120" value="${Math.round(fiberTarget)}" onchange="HL.updateProfile('fiberTargetG', this.value)">
+              </label>
+              <label>Sodium Target (mg)
+                <input class="ti" type="number" min="1" max="10000" value="${Math.round(sodiumTarget)}" onchange="HL.updateProfile('sodiumTargetMg', this.value)">
+              </label>
+              <label>Potassium Target (mg)
+                <input class="ti" type="number" min="1" max="10000" value="${Math.round(potassiumTarget)}" onchange="HL.updateProfile('potassiumTargetMg', this.value)">
+              </label>
             </div>
             <div class="hl-stats">
               <div><span>BMR</span><strong>${Math.round(targets.bmr)} kcal</strong></div>
               <div><span>TDEE</span><strong>${Math.round(targets.tdee)} kcal</strong></div>
               <div><span>Daily Target</span><strong>${Math.round(targets.target)} kcal</strong></div>
-              <div><span>Protein Target</span><strong>${Math.round(targets.proteinTarget)} g</strong></div>
+              <div><span>Protein Target</span><strong>${Math.round(proteinTarget)} g</strong></div>
+              <div><span>Fiber Target</span><strong>${Math.round(fiberTarget)} g</strong></div>
+              <div><span>Sodium Target</span><strong>${Math.round(sodiumTarget)} mg</strong></div>
+              <div><span>Potassium Target</span><strong>${Math.round(potassiumTarget)} mg</strong></div>
             </div>
           </section>
 
@@ -713,29 +962,42 @@ const HL = (function () {
           </section>
           <section class="hl-card hl-pane-nutrition">
             <div class="hl-card-title">Nutrition</div>
-            <div class="hl-food-form">
-              <input id="hl-food-name" class="ti" type="text" placeholder="Food name" onkeydown="if(event.key==='Enter'){event.preventDefault();HL.addFood();}">
-              <input id="hl-food-cal" class="ti" type="number" min="0" placeholder="Kcal" onkeydown="if(event.key==='Enter'){event.preventDefault();HL.addFood();}">
-              <input id="hl-food-p" class="ti" type="number" min="0" placeholder="P" onkeydown="if(event.key==='Enter'){event.preventDefault();HL.addFood();}">
-              <input id="hl-food-c" class="ti" type="number" min="0" placeholder="C" onkeydown="if(event.key==='Enter'){event.preventDefault();HL.addFood();}">
-              <input id="hl-food-f" class="ti" type="number" min="0" placeholder="F" onkeydown="if(event.key==='Enter'){event.preventDefault();HL.addFood();}">
-              <button class="fb btn-s" onclick="HL.addFood()">Add</button>
+            <div class="hl-preset-strip">
+              ${presetChips || '<span class="hl-empty-inline">No presets saved</span>'}
+              <button class="hl-chip" onclick="HL.managePresets()">Manage Presets</button>
             </div>
-            <div class="hl-macro-row">Calories <strong>${Math.round(totals.calories)} kcal</strong></div>
-            <div class="hl-macro-row">Protein <strong>${Math.round(totals.protein)} g</strong></div>
+            <div class="hl-food-form">
+              <div class="hl-food-fields">
+                <input id="hl-food-name" class="ti" type="text" placeholder="Food name" onkeydown="if(event.key==='Enter'){event.preventDefault();HL.addFood();}">
+                <input id="hl-food-qty" class="ti" type="number" min="0.25" step="0.25" value="1" placeholder="Qty" onkeydown="if(event.key==='Enter'){event.preventDefault();HL.addFood();}">
+                <input id="hl-food-cal" class="ti" type="number" min="0" placeholder="Kcal" onkeydown="if(event.key==='Enter'){event.preventDefault();HL.addFood();}">
+                <input id="hl-food-p" class="ti" type="number" min="0" placeholder="P" onkeydown="if(event.key==='Enter'){event.preventDefault();HL.addFood();}">
+                <input id="hl-food-c" class="ti" type="number" min="0" placeholder="C" onkeydown="if(event.key==='Enter'){event.preventDefault();HL.addFood();}">
+                <input id="hl-food-f" class="ti" type="number" min="0" placeholder="F" onkeydown="if(event.key==='Enter'){event.preventDefault();HL.addFood();}">
+                <input id="hl-food-fiber" class="ti" type="number" min="0" placeholder="Fiber g" onkeydown="if(event.key==='Enter'){event.preventDefault();HL.addFood();}">
+                <input id="hl-food-na" class="ti" type="number" min="0" placeholder="Na mg" onkeydown="if(event.key==='Enter'){event.preventDefault();HL.addFood();}">
+                <input id="hl-food-k" class="ti" type="number" min="0" placeholder="K mg" onkeydown="if(event.key==='Enter'){event.preventDefault();HL.addFood();}">
+              </div>
+              <div class="hl-food-actions">
+                <label class="hl-preset-toggle hl-preset-save"><input id="hl-food-preset" type="checkbox"><span class="hl-preset-switch"></span><span>Save as preset</span></label>
+                <button class="fb btn-s" onclick="HL.addFood()">Add</button>
+              </div>
+            </div>
+            <div class="hl-macro-row">Calories <strong>${Math.round(totals.calories)} / ${Math.round(calorieTarget)} kcal</strong></div>
+            <div class="hl-progress"><div class="hl-progress-fill" style="width:${calorieProgress}%"></div></div>
+            <div class="hl-macro-row">Remaining Calories <strong>${caloriesRemaining >= 0 ? Math.round(caloriesRemaining) + ' kcal' : Math.abs(Math.round(caloriesRemaining)) + ' kcal over'}</strong></div>
+            <div class="hl-macro-row">Protein <strong>${Math.round(totals.protein)} / ${Math.round(proteinTarget)} g</strong></div>
+            <div class="hl-progress"><div class="hl-progress-fill" style="width:${proteinProgress}%"></div></div>
             <div class="hl-macro-row">Carbs <strong>${Math.round(totals.carbs)} g</strong></div>
             <div class="hl-macro-row">Fat <strong>${Math.round(totals.fat)} g</strong></div>
+            <div class="hl-macro-row">Fiber <strong>${Math.round(totals.fiber)} / ${Math.round(fiberTarget)} g</strong></div>
+            <div class="hl-progress"><div class="hl-progress-fill" style="width:${fiberProgress}%"></div></div>
+            <div class="hl-macro-row">Sodium <strong>${Math.round(totals.sodium)} / ${Math.round(sodiumTarget)} mg</strong></div>
+            <div class="hl-progress"><div class="hl-progress-fill" style="width:${sodiumProgress}%"></div></div>
+            <div class="hl-macro-row">Potassium <strong>${Math.round(totals.potassium)} / ${Math.round(potassiumTarget)} mg</strong></div>
+            <div class="hl-progress"><div class="hl-progress-fill" style="width:${potassiumProgress}%"></div></div>
             <div class="hl-macro-row">Activity Burn <strong>${Math.round(burn)} kcal</strong></div>
-            <div class="hl-macro-row">Net Calories <strong>${Math.round(net)} kcal</strong></div>
-            <div class="hl-list">${day.nutrition.items.length ? day.nutrition.items.map(item => `
-              <div class="hl-row-item">
-                <div>
-                  <div class="hl-row-title">${esc(item.name)}</div>
-                  <div class="hl-row-sub">P ${Math.round(num(item.protein))} / C ${Math.round(num(item.carbs))} / F ${Math.round(num(item.fat))}</div>
-                </div>
-                <div class="hl-row-right">${Math.round(num(item.calories))} kcal <button class="nav-btn" onclick="HL.removeFood('${item.id}')">Delete</button></div>
-              </div>
-            `).join('') : '<div class="hl-empty">No foods logged for this day.</div>'}</div>
+            <div class="hl-list">${foodRows}</div>
           </section>
 
           <section class="hl-card hl-pane-activity">
@@ -782,7 +1044,7 @@ const HL = (function () {
                 <input class="ti" type="number" min="0" max="23" value="${Math.round(num(reminder.endHour, 22))}" onchange="HL.updateReminder('endHour', this.value)">
               </label>
             </div>
-            <div class="hl-log-list">${day.water.logs.length ? day.water.logs.map(log => `<div class="hl-log"><strong>${Math.round(num(log.ml))} ml</strong><span>${new Date(log.at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</span></div>`).join('') : '<div class="hl-empty">No water logs yet.</div>'}</div>
+            <div class="hl-log-list">${waterLogs}</div>
           </section>
 
           <section class="hl-card hl-card-wide hl-pane-graphs">
@@ -814,6 +1076,12 @@ const HL = (function () {
     render();
   }
 
+  function bootReminders() {
+    data = load();
+    ensure();
+    ensureReminderLoop();
+  }
+
   function openFromSearch(itemId) {
     if (!itemId) {
       init();
@@ -834,12 +1102,24 @@ const HL = (function () {
 
   return {
     init,
+    bootReminders,
     setDate,
     updateProfile,
     addFood,
     removeFood,
+    setFoodQty,
+    adjustFoodQty,
+    editFood,
+    duplicateFood,
+    saveFoodAsPreset,
+    quickLogPreset,
+    managePresets,
+    addPreset,
+    editPreset,
+    deletePreset,
     updateActivity,
     addWater,
+    removeWaterLog,
     setWaterTarget,
     resetWater,
     updateReminder,
@@ -850,6 +1130,7 @@ const HL = (function () {
     addWeightEntry,
     deleteWeightEntry,
     useProfileWeight,
+    render,
     openFromSearch
   };
 })();

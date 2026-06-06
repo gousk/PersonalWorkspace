@@ -300,7 +300,7 @@ const GL = (function () {
         </div>
         <div class="gl-list">
           <div class="gl-list-title">Gallery${folderFilter !== 'all' && folderFilter !== 'root' ? ` <span class="gl-list-sub">/ ${esc(folderName(folderFilter))}</span>` : folderFilter === 'root' ? ' <span class="gl-list-sub">/ Root</span>' : ''}${selectedCount ? ` <span class="gl-list-sub">/ ${selectedCount} selected</span>` : ''}</div>
-          <div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap;">${tagFilters}</div>
+          <div class="gl-filter-strip">${tagFilters}</div>
           <div class="gl-grid">${cards || '<div class="gl-empty">No media here. Upload to populate this view.</div>'}</div>
         </div>
       </div>`;

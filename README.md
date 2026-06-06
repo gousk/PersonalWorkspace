@@ -20,8 +20,11 @@ No build step is required. The app is plain HTML, CSS, and JavaScript.
 
 Some features use browser APIs:
 
-- Auto backup folder selection needs File System Access API support, such as Chrome or Edge.
+- Auto backup, the shared data folder, and folder reconnect need File System Access API support, such as Chrome or Edge.
 - Gallery media uses IndexedDB for larger stored files.
+- Folder handles (backup and shared) are stored in IndexedDB so they persist between sessions.
+
+Use `Alt+1` through `Alt+8` to jump between the main areas, and `Ctrl+K` to open global search.
 
 ## Main Areas
 
@@ -32,7 +35,8 @@ Dashboard for the workspace.
 - Shows counts for each app area.
 - Shows upcoming calendar reminders.
 - Shows commonly used tags.
-- Shows backup status and approximate local storage usage.
+- Shows backup status, last restore, and approximate local storage usage.
+- Quick action to create a backup.
 
 ### Backlog
 
@@ -43,6 +47,7 @@ Board-based task tracker.
 - Tasks with tags, priority, due date, notes, checklist items, and attachments.
 - Archive view for completed or removed work.
 - Task detail panel.
+- Board-level linked items, so a whole board can be linked to other workspace records.
 
 ### Notes
 
@@ -90,22 +95,31 @@ Free-form canvas for visual planning.
 
 ### Calendar
 
-Reminder and event planner.
+Reminder, event, and birthday planner.
 
-- Monthly calendar view.
-- Reminder timeline.
-- Date, time, tags, notes, lead-time reminders, and pre-reminders.
-- Open, done, and all filters.
-- Browser-side reminder checks while the app is open.
+- Monthly calendar view with markers for events and birthdays.
+- **Events** view with a reminder timeline and open, upcoming, all, and done filters.
+- **Birthdays** view for recurring yearly birthdays.
+- Click a day to filter the list to that day; new entries default to the selected day.
+- Events support a title, date, time, tags, notes, and multiple reminder offsets.
+- Each reminder offset is a lead time in days and minutes before the event, so one event can fire several reminders (for example one day before and ten minutes before).
+- Birthdays support a name, month and day, optional birth year, reminder lead days, and notes. They show the next date, the age being turned, and days until.
+- Convert an event into a birthday from the event editor.
+- Browser-side reminder checks run while the app is open, with on-screen reminder toasts (open, snooze, dismiss) and a sound cue.
 
 ### Health
 
 Daily health tracking area.
 
-- Profile settings for calorie target calculation.
-- Nutrition logging with calories, protein, carbs, and fat.
+- Profile settings for calorie target calculation, with editable protein, fiber, sodium, potassium, and water targets.
+- Nutrition logging with calories, protein, carbs, fat, fiber, sodium, and potassium.
+- Food entries use a quantity multiplier: per-serving values are entered once, then scaled by quantity at add time or with a per-row stepper.
+- Edit, duplicate, or delete logged foods, and save any food as a preset.
+- Saved food presets are editable and can be quick-logged from chips or a manage-presets dialog.
+- Daily progress bars and remaining amounts for calories, protein, fiber, sodium, potassium, and water.
 - Activity logging with steps, workout minutes, and extra burn.
-- Water tracking with target, quick add buttons, custom amounts, and reminders.
+- Water tracking with target, quick add buttons, custom amounts, removable individual log entries, and reminders.
+- Hydration reminders run from any page once the app is open, not only while the Health area is visible.
 - Weight tracking with dated entries.
 - Calendar heatmap and charts for weight, calories, net/burn, water, and steps.
 
@@ -115,39 +129,52 @@ Daily health tracking area.
 
 Searches across:
 
-- Backlog tasks
+- Backlog boards and tasks
 - Notes
 - Blog posts
 - Gallery items
 - Moodboards
-- Calendar reminders
+- Calendar reminders and birthdays
 - Health food, water, and weight records
 
 Search also supports tag filtering.
 
 ### Cross-App Links
 
-Backlog tasks, notes, blog posts, gallery media, moodboards, calendar reminders, and health days can be linked to each other.
+Backlog boards and tasks, notes, blog posts, gallery media, moodboards, calendar reminders, and health days can be linked to each other.
 
 - Open a record and use **Linked Items** to attach another workspace item.
 - Links are bidirectional, so linking a backlog task to a blog post also shows the backlink from the blog post.
+- Linked items and the link picker are grouped by app and by backlog board for easier scanning.
 - Moodboard media that came from the Gallery and moodboard Gallery folders are surfaced as related items.
 
 ### Backup and Restore
 
 Manual backup writes workspace data to the selected backup folder.
 
-Restore imports a backup JSON file and replaces current local workspace data.
+Restore imports a backup JSON file and replaces current local workspace data. The restore is transactional, so existing data is kept if the import cannot complete.
 
 Auto backup can be configured from **Backup Settings**:
 
 - Enable or disable auto backup.
-- Choose a backup folder.
+- Choose a backup folder, or reconnect it if a browser session dropped folder permission.
 - Set backup interval in minutes.
 - Set how many backup files to keep.
 - Run a backup manually into the selected folder.
 
-Auto backup checks when the app starts, while it is open, and when visibility changes. It only writes a new backup when the configured interval has passed.
+Auto backup checks when the app starts, while it is open, and when visibility changes. It only writes a new backup when the configured interval has passed. Settings are read defensively so a corrupt or partial value falls back per field instead of resetting the whole configuration.
+
+### Shared Data Sync
+
+Shared data sync keeps one copy of the workspace in a shared folder so different users or profiles on the same machine can work from the same data. It is configured from **Backup Settings**.
+
+- Choose a shared folder that each user points at, for example a folder readable by every account on the machine.
+- The app keeps a single `workspace-shared.json` file in that folder.
+- Local changes are written to the shared file shortly after they are saved.
+- The shared file is read on startup, on focus, and when visibility changes, and is applied only when it is newer than the local copy (last write wins by timestamp).
+- **Push Shared** and **Pull Shared** force a write or read on demand.
+- When sync is first enabled and a shared file already exists, you are asked to use the shared data, keep local data, or merge the two.
+- Empty or partial payloads are never written, and applying shared data is transactional, to avoid data loss.
 
 ### Blackout Mode
 
@@ -159,7 +186,8 @@ The app is local-first.
 
 - App records are stored in `localStorage`.
 - Larger Gallery media is stored in IndexedDB.
-- Backup folder handles are stored in IndexedDB.
+- Backup and shared folder handles are stored in IndexedDB.
+- The shared data file (`workspace-shared.json`) lives in the chosen shared folder.
 - No server or database is required.
 
 Storage keys used by the app include:
@@ -173,6 +201,10 @@ Storage keys used by the app include:
 - `ws_health`
 - `ws_links`
 - `ws_backup_settings`
+- `ws_calendar_reminder_log`
+- `ws_calendar_reminder_snooze`
+
+The app also stores small helper keys such as `ws_last_page`, `ws_last_backup`, and `ws_last_restore`.
 
 ## Project Structure
 
@@ -198,4 +230,5 @@ Storage keys used by the app include:
 
 - The app currently has no package manager setup.
 - There is no automated build or test runner.
-- Data lives in the browser profile unless exported with backup.
+- Data lives in the browser profile unless exported with backup or shared through a shared folder.
+```

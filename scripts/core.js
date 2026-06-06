@@ -212,6 +212,22 @@ function buildGlobalIndex() {
   const health = parseLS('ws_health', { nutrition: { days: {} }, water: { days: {} }, profile: {} });
 
   (backlog.boards || []).forEach(board => {
+    const taskTags = new Set();
+    (board.tasks || []).concat(board.archive || []).forEach(task => {
+      if (task && task.tag) taskTags.add(task.tag);
+    });
+    const taskCount = (board.tasks || []).length;
+    const archiveCount = (board.archive || []).length;
+    items.push({
+      app: 'backlog',
+      itemId: `board:${board.id}`,
+      title: board.name || 'Untitled backlog',
+      snippet: `Board | ${taskCount} active item${taskCount === 1 ? '' : 's'}${archiveCount ? ` | ${archiveCount} archived` : ''}`,
+      tags: ['backlog-board'].concat([...taskTags]),
+      date: board.updated || board.created || Date.now(),
+      page: 'backlog',
+      boardId: board.id
+    });
     (board.tasks || []).forEach(task => {
       items.push({
         app: 'backlog',
@@ -287,6 +303,25 @@ function buildGlobalIndex() {
       page: 'calendar'
     });
   });
+  (calendar.birthdays || []).forEach(bd => {
+    const now = new Date();
+    let year = now.getFullYear();
+    let next = new Date(year, Number(bd.month || 1) - 1, Number(bd.day || 1), 9, 0, 0, 0);
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    if (next < today) {
+      year += 1;
+      next = new Date(year, Number(bd.month || 1) - 1, Number(bd.day || 1), 9, 0, 0, 0);
+    }
+    items.push({
+      app: 'calendar',
+      itemId: `birthday:${bd.id}`,
+      title: `${bd.name || 'Birthday'} birthday`,
+      snippet: `${bd.notes || ''} ${bd.year ? `turns ${year - Number(bd.year)}` : ''}`.trim(),
+      tags: ['birthday', 'calendar'],
+      date: next.getTime(),
+      page: 'calendar'
+    });
+  });
 
   const nutritionDays = (health.nutrition && health.nutrition.days) || {};
   const healthDays = new Set();
@@ -295,11 +330,18 @@ function buildGlobalIndex() {
     const dayItems = (nutritionDays[day] && nutritionDays[day].items) || [];
     dayItems.forEach(food => {
       const dts = Date.parse(`${day}T12:00`);
+      const qty = Math.max(0, Number(food.qty == null ? 1 : food.qty) || 1);
+      const protein = Number(food.protein || 0) * qty;
+      const carbs = Number(food.carbs || 0) * qty;
+      const fat = Number(food.fat || 0) * qty;
+      const fiber = Number(food.fiber || 0) * qty;
+      const sodium = Number(food.sodium || 0) * qty;
+      const potassium = Number(food.potassium || 0) * qty;
       items.push({
         app: 'health',
         itemId: `food:${day}:${food.id || food.name || uid()}`,
         title: food.name || 'Food entry',
-        snippet: `${day} | P${Number(food.protein || 0)} C${Number(food.carbs || 0)} F${Number(food.fat || 0)}`,
+        snippet: `${day} | qty ${qty} | P${Math.round(protein)} C${Math.round(carbs)} F${Math.round(fat)} Fiber ${Math.round(fiber)}g | Na ${Math.round(sodium)}mg K ${Math.round(potassium)}mg`,
         tags: ['health', 'nutrition'],
         date: Number.isFinite(dts) ? dts : Date.now(),
         page: 'health'
@@ -601,14 +643,21 @@ const WSLinks = (function () {
     const encoded = encodeRef(n);
     const title = options.title || 'Linked Items';
     const addLabel = options.addLabel || '+ Link';
-    const rowsHtml = rows.map(link => {
+    if (!rows.length) {
+      return `
+        <div class="ws-link-compact-empty">
+          <span>${esc(title)}</span>
+          <button class="nav-btn ws-link-add" onclick="WSLinks.openPicker('${encoded}')">${esc(addLabel)}</button>
+        </div>`;
+    }
+    function renderLinkedRow(link, extraClass = '') {
       const other = otherRef(link, n);
       const meta = metaFor(other);
       const missing = !meta;
       const label = link.label ? `<span class="ws-link-reason">${esc(link.label)}</span>` : '';
       const remove = link.virtual ? '' : `<button class="ws-link-mini danger" onclick="event.stopPropagation();WSLinks.removeAndRefresh('${link.id}','${encoded}')">Remove</button>`;
       return `
-        <div class="ws-link-row${missing ? ' missing' : ''}">
+        <div class="ws-link-row${missing ? ' missing' : ''}${extraClass ? ' ' + extraClass : ''}">
           <button class="ws-link-main" onclick="WSLinks.openEncoded('${encodeRef(other)}')">
             <span class="ws-link-app">${esc(appLabel(other.app))}</span>
             <span class="ws-link-title">${esc(meta ? meta.title : 'Missing item')}</span>
@@ -617,7 +666,45 @@ const WSLinks = (function () {
           </button>
           <div class="ws-link-actions">${remove}</div>
         </div>`;
-    }).join('');
+    }
+    function groupedRowsHtml() {
+      const backlog = new Map();
+      const appGroups = new Map();
+      rows.forEach(link => {
+        const other = otherRef(link, n);
+        if (other.app === 'backlog') {
+          const id = String(other.id || '');
+          const boardId = other.boardId || (id.startsWith('board:') ? id.slice(6) : 'other');
+          if (!backlog.has(boardId)) backlog.set(boardId, { board: null, children: [] });
+          if (id.startsWith('board:')) backlog.get(boardId).board = link;
+          else backlog.get(boardId).children.push(link);
+          return;
+        }
+        const app = other.app || 'other';
+        if (!appGroups.has(app)) appGroups.set(app, []);
+        appGroups.get(app).push(link);
+      });
+
+      const parts = [];
+      backlog.forEach((group, boardId) => {
+        const boardMeta = metaFor({ app: 'backlog', id: `board:${boardId}`, boardId });
+        parts.push(`
+          <div class="ws-link-group">
+            <div class="ws-link-group-head"><span>Backlog</span><strong>${esc(boardMeta ? boardMeta.title : 'Backlog Board')}</strong></div>
+            ${group.board ? renderLinkedRow(group.board, 'parent') : ''}
+            ${group.children.length ? `<div class="ws-link-group-children">${group.children.map(link => renderLinkedRow(link, 'child')).join('')}</div>` : ''}
+          </div>`);
+      });
+      appGroups.forEach((groupRows, app) => {
+        parts.push(`
+          <div class="ws-link-group">
+            <div class="ws-link-group-head"><span>${esc(appLabel(app))}</span><strong>${groupRows.length} item${groupRows.length === 1 ? '' : 's'}</strong></div>
+            <div class="ws-link-group-children">${groupRows.map(link => renderLinkedRow(link)).join('')}</div>
+          </div>`);
+      });
+      return parts.join('');
+    }
+    const rowsHtml = groupedRowsHtml();
 
     return `
       <div class="ws-link-head">
@@ -629,7 +716,8 @@ const WSLinks = (function () {
   function renderPanel(ref, options = {}) {
     const n = normalizeRef(ref);
     if (!n) return '';
-    return `<div class="ws-links" id="${domId(n)}">${panelInner(n, options)}</div>`;
+    const empty = linkRows(n).length ? '' : ' empty';
+    return `<div class="ws-links${empty}" id="${domId(n)}">${panelInner(n, options)}</div>`;
   }
   function refreshPanel(ref) {
     const n = normalizeRef(ref);
@@ -695,27 +783,103 @@ const WSLinks = (function () {
     });
     return [...map.values()];
   }
-  function renderPickerResults(term = '') {
-    const root = document.getElementById('ws-link-picker-results');
-    if (!root || !pickerSource) return;
-    const q = String(term || '').trim().toLowerCase();
-    const rows = linkableItems()
-      .filter(item => {
-        if (sameRef(item.ref, pickerSource)) return false;
-        if (alreadyLinked(item.ref, pickerSource)) return false;
-        if (pickerApp !== 'all' && item.app !== pickerApp) return false;
-        if (!q) return true;
-        const hay = `${item.title} ${item.snippet} ${(item.tags || []).join(' ')} ${item.app}`.toLowerCase();
-        return hay.includes(q);
-      })
-      .sort((a, b) => (b.date || 0) - (a.date || 0))
-      .slice(0, 80);
-    root.innerHTML = rows.length ? rows.map(item => `
-      <button class="ws-picker-row" onclick="WSLinks.pickTarget('${encodeRef(item.ref)}')">
+  function pickerHay(item) {
+    return `${item.title || ''} ${item.snippet || ''} ${(item.tags || []).join(' ')} ${item.app || ''}`.toLowerCase();
+  }
+  function pickerRowHtml(item, extraClass = '') {
+    return `
+      <button class="ws-picker-row${extraClass ? ' ' + extraClass : ''}" onclick="WSLinks.pickTarget('${encodeRef(item.ref)}')">
         <span class="ws-link-app">${esc(appLabel(item.app))}</span>
         <strong>${esc(item.title || 'Untitled')}</strong>
         <span>${esc(item.snippet || '')}</span>
-      </button>`).join('') : '<div class="ws-link-empty">No available items found.</div>';
+      </button>`;
+  }
+  function pickerGroups(term = '') {
+    const q = String(term || '').trim().toLowerCase();
+    const allItems = linkableItems().filter(item => pickerApp === 'all' || item.app === pickerApp);
+    const items = allItems.filter(item => !sameRef(item.ref, pickerSource) && !alreadyLinked(item.ref, pickerSource));
+
+    const matches = item => !q || pickerHay(item).includes(q);
+    const groups = [];
+    const allBacklogBoards = new Map();
+    const backlogBoards = new Map();
+    const backlogTasks = [];
+
+    allItems.forEach(item => {
+      if (item.app === 'backlog' && String(item.itemId || '').startsWith('board:')) {
+        allBacklogBoards.set(item.boardId || String(item.itemId).slice(6), item);
+      }
+    });
+    items.forEach(item => {
+      if (item.app === 'backlog' && String(item.itemId || '').startsWith('board:')) {
+        backlogBoards.set(item.boardId || String(item.itemId).slice(6), item);
+      } else if (item.app === 'backlog') {
+        backlogTasks.push(item);
+      }
+    });
+
+    if (pickerApp === 'all' || pickerApp === 'backlog') {
+      const boardIds = new Set([...allBacklogBoards.keys(), ...backlogTasks.map(item => item.boardId).filter(Boolean)]);
+      boardIds.forEach(boardId => {
+        const board = allBacklogBoards.get(boardId);
+        const eligibleBoard = backlogBoards.get(boardId);
+        const boardMatch = board ? matches(board) : false;
+        const children = backlogTasks
+          .filter(item => item.boardId === boardId)
+          .filter(item => boardMatch || matches(item))
+          .sort((a, b) => (b.date || 0) - (a.date || 0))
+          .slice(0, 30);
+        const showBoard = eligibleBoard && (!q || boardMatch || children.length);
+        if (!showBoard && !children.length) return;
+        groups.push({
+          key: `backlog-${boardId}`,
+          title: board ? board.title : 'Backlog Board',
+          meta: board ? board.snippet : `${children.length} item${children.length === 1 ? '' : 's'}`,
+          app: 'backlog',
+          parent: showBoard ? eligibleBoard : null,
+          children
+        });
+      });
+    }
+
+    const byApp = new Map();
+    items
+      .filter(item => item.app !== 'backlog')
+      .filter(matches)
+      .forEach(item => {
+        const key = item.app || 'other';
+        if (!byApp.has(key)) byApp.set(key, []);
+        byApp.get(key).push(item);
+      });
+
+    byApp.forEach((groupItems, app) => {
+      groupItems.sort((a, b) => (b.date || 0) - (a.date || 0));
+      groups.push({
+        key: app,
+        title: appLabel(app),
+        meta: `${groupItems.length} item${groupItems.length === 1 ? '' : 's'}`,
+        app,
+        parent: null,
+        children: groupItems
+      });
+    });
+
+    return groups.slice(0, 40);
+  }
+  function renderPickerResults(term = '') {
+    const root = document.getElementById('ws-link-picker-results');
+    if (!root || !pickerSource) return;
+    const groups = pickerGroups(term);
+    root.innerHTML = groups.length ? groups.map(group => `
+      <div class="ws-picker-section">
+        ${group.app === 'backlog' && group.parent ? pickerRowHtml(group.parent, 'board') : `
+          <div class="ws-picker-section-head">
+            <span>${esc(appLabel(group.app))}</span>
+            <strong>${esc(group.title)}</strong>
+            <em>${esc(group.meta || '')}</em>
+          </div>`}
+        ${group.children.length ? `<div class="ws-picker-children">${group.children.map(item => pickerRowHtml(item, group.app === 'backlog' ? 'child' : '')).join('')}</div>` : ''}
+      </div>`).join('') : '<div class="ws-link-empty">No available items found.</div>';
   }
   function setPickerApp(app) {
     pickerApp = app || 'all';
@@ -750,13 +914,26 @@ const WSLinks = (function () {
       renderPickerResults('');
     }, 20);
   }
+  function openFor(ref) {
+    const source = normalizeRef(ref);
+    if (!source) return;
+    openPicker(encodeRef(source));
+  }
+  function hasLinks(ref) {
+    const source = normalizeRef(ref);
+    return source ? linkRows(source).length > 0 : false;
+  }
   function pickTarget(encodedTarget) {
     const target = decodeRef(encodedTarget);
     if (!pickerSource || !target) return;
     addLink(pickerSource, target);
     const source = pickerSource;
     closeModal();
-    refreshSoon(source);
+    if (source.app === 'health' && window.HL && HL.render) {
+      setTimeout(() => HL.render(), REFRESH_DELAY);
+    } else {
+      refreshSoon(source);
+    }
   }
 
   return {
@@ -764,6 +941,8 @@ const WSLinks = (function () {
     renderPanel,
     refreshPanel,
     openPicker,
+    openFor,
+    hasLinks,
     renderPickerResults,
     setPickerApp,
     pickTarget,
@@ -793,9 +972,12 @@ const WSReminders = (function () {
     }
   }
 
-  function getCalendarEvents() {
+  function getCalendarData() {
     const calendar = parseJSON(CALENDAR_KEY, { events: [] });
-    return Array.isArray(calendar.events) ? calendar.events : [];
+    return {
+      events: Array.isArray(calendar.events) ? calendar.events : [],
+      birthdays: Array.isArray(calendar.birthdays) ? calendar.birthdays : []
+    };
   }
 
   function eventBaseTs(ev) {
@@ -805,22 +987,33 @@ const WSReminders = (function () {
     return Number.isFinite(ts) ? ts : null;
   }
 
-  function mainReminderTs(ev) {
-    const base = eventBaseTs(ev);
-    if (!base) return null;
+  function normalizeOffsets(ev) {
+    if (Array.isArray(ev.offsets) && ev.offsets.length) {
+      return ev.offsets.map(x => ({
+        days: Math.max(0, Number(x.days || 0)),
+        mins: Math.max(0, Number(x.mins || 0))
+      }));
+    }
     const leadDays = Math.max(0, Number(ev.remindDays || 0));
-    return base - leadDays * 24 * 60 * 60 * 1000;
+    const preMin = Math.max(0, Number(ev.preReminderMin || 0));
+    return [{ days: leadDays, mins: 0 }].concat(preMin > 0 ? [{ days: leadDays, mins: preMin }] : []);
   }
 
   function triggersForEvent(ev) {
-    const mainTs = mainReminderTs(ev);
-    if (!mainTs) return [];
-    const preMin = Math.max(0, Number(ev.preReminderMin || 0));
-    const triggers = [];
-    if (preMin > 0) {
-      triggers.push({ kind: 'pre', ts: mainTs - preMin * 60 * 1000, label: `${preMin} min before reminder` });
-    }
-    triggers.push({ kind: 'main', ts: mainTs, label: 'Reminder time' });
+    const base = eventBaseTs(ev);
+    if (!base) return [];
+    const triggers = normalizeOffsets(ev).map(offset => {
+      const days = Math.max(0, Number(offset.days || 0));
+      const mins = Math.max(0, Number(offset.mins || 0));
+      const labelParts = [];
+      if (days) labelParts.push(`${days} day${days === 1 ? '' : 's'}`);
+      if (mins) labelParts.push(`${mins} minute${mins === 1 ? '' : 's'}`);
+      return {
+        kind: `offset-${days}-${mins}`,
+        ts: base - days * 24 * 60 * 60 * 1000 - mins * 60 * 1000,
+        label: labelParts.length ? `${labelParts.join(' and ')} before` : 'Reminder time'
+      };
+    });
     const used = new Set();
     return triggers.filter(t => {
       const key = `${t.kind}|${Math.floor(t.ts / 1000)}`;
@@ -828,6 +1021,29 @@ const WSReminders = (function () {
       used.add(key);
       return true;
     });
+  }
+
+  function birthdayDateForYear(bd, year) {
+    const date = new Date(year, Number(bd.month || 1) - 1, Number(bd.day || 1), 9, 0, 0, 0);
+    if (date.getMonth() !== Number(bd.month || 1) - 1) return null;
+    return date;
+  }
+
+  function triggersForBirthday(bd, nowDate = new Date()) {
+    if (!bd || !bd.id || !bd.month || !bd.day) return [];
+    const years = [nowDate.getFullYear(), nowDate.getFullYear() + 1];
+    const triggers = [];
+    years.forEach(year => {
+      const birthday = birthdayDateForYear(bd, year);
+      if (!birthday) return;
+      const days = Math.max(0, Number(bd.remindDays || 0));
+      triggers.push({
+        kind: `birthday-${year}-${days}`,
+        ts: birthday.getTime() - days * 24 * 60 * 60 * 1000,
+        label: days ? `${days} day${days === 1 ? '' : 's'} before birthday` : 'Birthday today'
+      });
+    });
+    return triggers;
   }
 
   function triggerKey(ev, trig) {
@@ -904,6 +1120,10 @@ const WSReminders = (function () {
   }
 
   function eventLabel(ev) {
+    if (ev && ev.kind === 'birthday') {
+      const base = eventBaseTs(ev);
+      return base ? new Date(base).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Birthday';
+    }
     const base = eventBaseTs(ev);
     if (!base) return ev.date || 'Unknown date';
     const hasTime = !!ev.time;
@@ -918,7 +1138,8 @@ const WSReminders = (function () {
     navigateTo('calendar');
     setTimeout(() => {
       if (window.CL && typeof window.CL.openFromSearch === 'function') {
-        window.CL.openFromSearch(ev.id);
+        if (ev.kind === 'birthday' && typeof window.CL.setView === 'function') window.CL.setView('birthdays');
+        else window.CL.openFromSearch(ev.id);
       }
     }, 80);
   }
@@ -959,8 +1180,24 @@ const WSReminders = (function () {
   }
 
   function checkNow() {
-    const events = getCalendarEvents().filter(ev => ev && ev.id && !ev.done);
+    const calendar = getCalendarData();
+    const events = calendar.events.filter(ev => ev && ev.id && !ev.done);
+    const birthdays = calendar.birthdays
+      .filter(bd => bd && bd.id && bd.name && bd.month && bd.day)
+      .map(bd => ({
+        ...bd,
+        kind: 'birthday',
+        title: `${bd.name} birthday`,
+        date: (() => {
+          const next = birthdayDateForYear(bd, new Date().getFullYear());
+          const fallback = birthdayDateForYear(bd, new Date().getFullYear() + 1);
+          const date = next && next.getTime() >= new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime() ? next : fallback;
+          return date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` : '';
+        })(),
+        time: '09:00'
+      }));
     const now = Date.now();
+    const nowDate = new Date(now);
     const log = getLog();
     const snooze = getSnooze();
     const activeKeys = new Set();
@@ -970,12 +1207,20 @@ const WSReminders = (function () {
         activeKeys.add(triggerKey(ev, trig));
       });
     });
+    birthdays.forEach(bd => {
+      triggersForBirthday(bd, nowDate).forEach(trig => {
+        activeKeys.add(triggerKey(bd, trig));
+      });
+    });
 
     cleanState(activeKeys, log, snooze);
 
-    events.forEach(ev => {
-      triggersForEvent(ev).forEach(trig => {
-        const key = triggerKey(ev, trig);
+    const dueItems = events.map(ev => ({ item: ev, triggers: triggersForEvent(ev) }))
+      .concat(birthdays.map(bd => ({ item: bd, triggers: triggersForBirthday(bd, nowDate) })));
+
+    dueItems.forEach(({ item, triggers }) => {
+      triggers.forEach(trig => {
+        const key = triggerKey(item, trig);
         if (now < trig.ts) return;
         if (now - trig.ts > MAX_LATE_MS) {
           log[key] = String(trig.ts);
@@ -990,7 +1235,7 @@ const WSReminders = (function () {
         if (hasSnooze && now < snoozeUntil) return;
         if (!dueFirstTime && !dueAfterSnooze) return;
 
-        showVisualReminder(ev, trig, key);
+        showVisualReminder(item, trig, key);
         playTone();
         log[key] = String(trig.ts);
         if (hasSnooze) delete snooze[key];
@@ -1022,38 +1267,90 @@ const WSReminders = (function () {
 })();
 
 WSReminders.start();
+window.addEventListener('DOMContentLoaded', () => {
+  if (window.HL && typeof window.HL.bootReminders === 'function') window.HL.bootReminders();
+});
 const WSBackup = (function () {
   const DATA_KEYS = ['ws_backlog', 'ws_notes', 'ws_blog', 'ws_gallery', 'ws_moodboard', 'ws_calendar', 'ws_health', 'ws_links', 'ws_calendar_reminder_log', 'ws_calendar_reminder_snooze'];
   const SETTINGS_KEY = 'ws_backup_settings';
   const DB_NAME = 'workspace_backup_handles';
   const DB_STORE = 'handles';
   const DIR_KEY = 'backup_dir';
-  const DEFAULT_SETTINGS = { enabled: false, intervalMinutes: 60, maxBackups: 10, dirName: '', lastAutoBackup: 0, lastAutoError: '' };
+  const SHARED_DIR_KEY = 'shared_dir';
+  const SHARED_FILE = 'workspace-shared.json';
+  const DEFAULT_SETTINGS = {
+    enabled: false,
+    intervalMinutes: 60,
+    maxBackups: 10,
+    dirName: '',
+    lastAutoBackup: 0,
+    lastAutoError: '',
+    sharedEnabled: false,
+    sharedDirName: '',
+    sharedLastApplied: 0,
+    sharedLastSync: 0,
+    sharedLastError: ''
+  };
   let autoTimer = null;
   let autoRunning = false;
+  let sharedTimer = null;
+  let sharedWriting = false;
+  let sharedReading = false;
 
   function settings() {
-    const raw = parseLS(SETTINGS_KEY, {});
+    let raw = {};
+    try {
+      const parsed = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+      if (parsed && typeof parsed === 'object') raw = parsed;
+    } catch {}
     return {
-      ...DEFAULT_SETTINGS,
-      ...(raw || {}),
-      intervalMinutes: Math.max(5, Number(raw && raw.intervalMinutes) || DEFAULT_SETTINGS.intervalMinutes),
-      maxBackups: Math.max(1, Number(raw && raw.maxBackups) || DEFAULT_SETTINGS.maxBackups)
+      enabled: typeof raw.enabled === 'boolean' ? raw.enabled : DEFAULT_SETTINGS.enabled,
+      intervalMinutes: Math.max(5, Number(raw.intervalMinutes) || DEFAULT_SETTINGS.intervalMinutes),
+      maxBackups: Math.max(1, Number(raw.maxBackups) || DEFAULT_SETTINGS.maxBackups),
+      dirName: typeof raw.dirName === 'string' ? raw.dirName : DEFAULT_SETTINGS.dirName,
+      lastAutoBackup: Number(raw.lastAutoBackup) || DEFAULT_SETTINGS.lastAutoBackup,
+      lastAutoError: typeof raw.lastAutoError === 'string' ? raw.lastAutoError : DEFAULT_SETTINGS.lastAutoError,
+      sharedEnabled: typeof raw.sharedEnabled === 'boolean' ? raw.sharedEnabled : DEFAULT_SETTINGS.sharedEnabled,
+      sharedDirName: typeof raw.sharedDirName === 'string' ? raw.sharedDirName : DEFAULT_SETTINGS.sharedDirName,
+      sharedLastApplied: Number(raw.sharedLastApplied) || DEFAULT_SETTINGS.sharedLastApplied,
+      sharedLastSync: Number(raw.sharedLastSync) || DEFAULT_SETTINGS.sharedLastSync,
+      sharedLastError: typeof raw.sharedLastError === 'string' ? raw.sharedLastError : DEFAULT_SETTINGS.sharedLastError
     };
   }
   function saveSettings(next) {
-    safeSetLSJSON(SETTINGS_KEY, { ...settings(), ...next }, { silent: true });
+    const current = settings();
+    safeSetLSJSON(SETTINGS_KEY, { ...current, ...next }, { silent: true });
   }
-  function payloadText() {
+  function payloadObject(updatedAt = Date.now()) {
     const payload = {
       version: 1,
       exportedAt: new Date().toISOString(),
+      updatedAt,
       data: {}
     };
     DATA_KEYS.forEach(key => {
       payload.data[key] = parseLS(key, null);
     });
-    return JSON.stringify(payload, null, 2);
+    return payload;
+  }
+  function payloadText() {
+    return JSON.stringify(payloadObject(), null, 2);
+  }
+  function hasLocalData() {
+    return DATA_KEYS.some(key => {
+      const raw = localStorage.getItem(key);
+      return raw != null && raw !== '' && raw !== 'null' && raw !== '{}' && raw !== '[]';
+    });
+  }
+  function hasPayloadData(payload) {
+    if (!payload || typeof payload !== 'object' || !payload.data || typeof payload.data !== 'object') return false;
+    return DATA_KEYS.some(key => {
+      const v = payload.data[key];
+      if (v == null) return false;
+      if (Array.isArray(v)) return v.length > 0;
+      if (typeof v === 'object') return Object.keys(v).length > 0;
+      return String(v).length > 0;
+    });
   }
   function stamp() {
     return new Date().toISOString().replace(/[:.]/g, '-');
@@ -1085,9 +1382,9 @@ const WSBackup = (function () {
       tx.onerror = () => reject(tx.error);
     });
   }
-  async function getDirectoryHandle(options = {}) {
+  async function getStoredHandle(key, options = {}) {
     if (!('showDirectoryPicker' in window)) return null;
-    const handle = await idbGet(DIR_KEY);
+    const handle = await idbGet(key);
     if (!handle) return null;
     const mode = { mode: 'readwrite' };
     const permission = await handle.queryPermission(mode);
@@ -1097,6 +1394,12 @@ const WSBackup = (function () {
       if (requested === 'granted') return handle;
     }
     return null;
+  }
+  async function getDirectoryHandle(options = {}) {
+    return getStoredHandle(DIR_KEY, options);
+  }
+  async function getSharedDirectoryHandle(options = {}) {
+    return getStoredHandle(SHARED_DIR_KEY, options);
   }
   async function pickDirectoryHandle() {
     if (!('showDirectoryPicker' in window)) {
@@ -1113,9 +1416,54 @@ const WSBackup = (function () {
       return null;
     }
   }
+  async function reconnectDirectory() {
+    const handle = await getDirectoryHandle({ requestPermission: true });
+    if (handle) {
+      saveSettings({ dirName: handle.name, lastAutoError: '' });
+      openSettings();
+      return true;
+    }
+    alert('Could not reconnect the backup folder. Choose the folder again if it moved or permission was denied.');
+    openSettings();
+    return false;
+  }
   async function chooseDirectory() {
     const handle = await pickDirectoryHandle();
     if (handle) openSettings();
+  }
+  async function pickSharedDirectoryHandle() {
+    if (!('showDirectoryPicker' in window)) {
+      alert('Shared data needs Chrome or Edge File System Access support.');
+      return null;
+    }
+    try {
+      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      await idbSet(SHARED_DIR_KEY, handle);
+      saveSettings({ sharedDirName: handle.name, sharedLastError: '' });
+      return handle;
+    } catch (err) {
+      if (err && err.name !== 'AbortError') alert('Could not select shared folder.');
+      return null;
+    }
+  }
+  async function chooseSharedDirectory() {
+    const handle = await pickSharedDirectoryHandle();
+    if (handle) {
+      saveSettings({ sharedEnabled: true, sharedDirName: handle.name, sharedLastError: '' });
+      await firstSharedEnable(handle);
+      openSettings();
+    }
+  }
+  async function reconnectSharedDirectory() {
+    const handle = await getSharedDirectoryHandle({ requestPermission: true });
+    if (handle) {
+      saveSettings({ sharedDirName: handle.name, sharedLastError: '' });
+      openSettings();
+      return true;
+    }
+    alert('Could not reconnect the shared folder. Choose the folder again if it moved or permission was denied.');
+    openSettings();
+    return false;
   }
   async function writeBackupToDirectory(handle, reason) {
     const fileName = `workspace-auto-backup-${stamp()}.json`;
@@ -1145,6 +1493,143 @@ const WSBackup = (function () {
       try { await handle.removeEntry(item.name); } catch {}
     }
   }
+  async function readSharedPayload(handle) {
+    try {
+      const fileHandle = await handle.getFileHandle(SHARED_FILE);
+      const file = await fileHandle.getFile();
+      const text = await file.text();
+      const payload = JSON.parse(text);
+      return payload && typeof payload === 'object' ? payload : null;
+    } catch {
+      return null;
+    }
+  }
+  function mergeValues(localValue, sharedValue) {
+    if (sharedValue == null) return localValue;
+    if (localValue == null) return sharedValue;
+    if (Array.isArray(localValue) && Array.isArray(sharedValue)) {
+      const byId = new Map();
+      localValue.forEach(item => {
+        if (item && item.id) byId.set(item.id, item);
+      });
+      sharedValue.forEach(item => {
+        if (item && item.id) byId.set(item.id, mergeValues(byId.get(item.id), item));
+        else byId.set(uid(), item);
+      });
+      return [...byId.values()];
+    }
+    if (typeof localValue === 'object' && typeof sharedValue === 'object' && !Array.isArray(localValue) && !Array.isArray(sharedValue)) {
+      const next = { ...localValue };
+      Object.keys(sharedValue).forEach(key => {
+        next[key] = mergeValues(localValue[key], sharedValue[key]);
+      });
+      return next;
+    }
+    return sharedValue;
+  }
+  function mergedPayloadData(sharedData) {
+    const merged = {};
+    DATA_KEYS.forEach(key => {
+      merged[key] = mergeValues(parseLS(key, null), sharedData ? sharedData[key] : null);
+    });
+    return merged;
+  }
+  function applySharedPayload(payload, mode = 'use') {
+    if (!hasPayloadData(payload)) return false;
+    const dataToApply = mode === 'merge' ? mergedPayloadData(payload.data) : payload.data;
+    const snapshot = {};
+    DATA_KEYS.forEach(key => { snapshot[key] = localStorage.getItem(key); });
+
+    let ok = true;
+    for (const key of DATA_KEYS) {
+      if (dataToApply[key] == null) continue;
+      if (!safeSetLSJSON(key, dataToApply[key], { silent: true })) {
+        ok = false;
+        break;
+      }
+    }
+    if (!ok) {
+      DATA_KEYS.forEach(key => {
+        const prev = snapshot[key];
+        if (prev == null) localStorage.removeItem(key);
+        else safeSetLSRaw(key, prev, { silent: true });
+      });
+      return false;
+    }
+    const stampMs = Number(payload.updatedAt || Date.parse(payload.exportedAt) || Date.now());
+    saveSettings({ sharedLastApplied: stampMs, sharedLastSync: Date.now(), sharedLastError: '' });
+    if (window.WSReminders && typeof WSReminders.checkNow === 'function') WSReminders.checkNow();
+    navigateTo(currentPage);
+    return true;
+  }
+  async function writeSharedNow(reason = 'save') {
+    const s = settings();
+    if (!s.sharedEnabled || sharedWriting) return false;
+    if (!hasLocalData()) return false;
+    sharedWriting = true;
+    try {
+      const handle = await getSharedDirectoryHandle({ requestPermission: false });
+      if (!handle) {
+        saveSettings({ sharedLastError: 'Shared folder permission is missing. Reconnect the folder in Backup Settings.' });
+        return false;
+      }
+      const updatedAt = Date.now();
+      const payload = payloadObject(updatedAt);
+      if (!hasPayloadData(payload)) return false;
+      const file = await handle.getFileHandle(SHARED_FILE, { create: true });
+      const writable = await file.createWritable();
+      await writable.write(JSON.stringify(payload, null, 2));
+      await writable.close();
+      saveSettings({ sharedLastApplied: updatedAt, sharedLastSync: Date.now(), sharedLastError: '' });
+      return reason;
+    } catch {
+      saveSettings({ sharedLastError: 'Shared data write failed. Check folder permissions and disk space.' });
+      return false;
+    } finally {
+      sharedWriting = false;
+    }
+  }
+  function queueSharedWrite() {
+    if (!settings().sharedEnabled) return;
+    if (sharedTimer) clearTimeout(sharedTimer);
+    sharedTimer = setTimeout(() => writeSharedNow('debounced'), 700);
+  }
+  async function readSharedIfNewer(reason = 'check') {
+    const s = settings();
+    if (!s.sharedEnabled || sharedReading) return false;
+    sharedReading = true;
+    try {
+      const handle = await getSharedDirectoryHandle({ requestPermission: false });
+      if (!handle) {
+        saveSettings({ sharedLastError: 'Shared folder permission is missing. Reconnect the folder in Backup Settings.' });
+        return false;
+      }
+      const payload = await readSharedPayload(handle);
+      if (!hasPayloadData(payload)) return false;
+      const updatedAt = Number(payload.updatedAt || Date.parse(payload.exportedAt) || 0);
+      if (!updatedAt || updatedAt <= Number(settings().sharedLastApplied || 0)) return false;
+      return applySharedPayload(payload, 'use') || reason;
+    } catch {
+      saveSettings({ sharedLastError: 'Shared data read failed.' });
+      return false;
+    } finally {
+      sharedReading = false;
+    }
+  }
+  async function firstSharedEnable(handle) {
+    const payload = await readSharedPayload(handle);
+    if (hasPayloadData(payload)) {
+      const answer = String(prompt('A shared data file already exists. Type "use" to load it, "keep" to keep local data, or "merge" to combine both.', 'use') || '').trim().toLowerCase();
+      if (answer === 'use') applySharedPayload(payload, 'use');
+      else if (answer === 'merge') {
+        applySharedPayload(payload, 'merge');
+        await writeSharedNow('first-enable-merge');
+      }
+      else await writeSharedNow('first-enable-keep-local');
+    } else {
+      await writeSharedNow('first-enable-empty');
+    }
+  }
   function scheduleAutoCheck() {
     if (autoTimer) clearTimeout(autoTimer);
     const s = settings();
@@ -1164,7 +1649,7 @@ const WSBackup = (function () {
     try {
       const handle = await getDirectoryHandle({ requestPermission: false });
       if (!handle) {
-        saveSettings({ lastAutoError: 'Backup folder permission is missing. Open Backup Settings and reselect the folder.' });
+        saveSettings({ lastAutoError: 'Backup folder permission is missing. Open Backup Settings and reconnect the folder.' });
         return false;
       }
       await writeBackupToDirectory(handle, reason);
@@ -1196,13 +1681,36 @@ const WSBackup = (function () {
     const s = settings();
     const supported = 'showDirectoryPicker' in window;
     const last = s.lastAutoBackup ? new Date(Number(s.lastAutoBackup)).toLocaleString() : 'Never';
+    const sharedLast = s.sharedLastSync ? new Date(Number(s.sharedLastSync)).toLocaleString() : 'Never';
     const folder = s.dirName ? esc(s.dirName) : 'No folder selected';
+    const sharedFolder = s.sharedDirName ? esc(s.sharedDirName) : 'No shared folder selected';
+    if (supported && s.dirName) {
+      getDirectoryHandle({ requestPermission: true }).then(handle => {
+        if (handle) saveSettings({ dirName: handle.name, lastAutoError: '' });
+      }).catch(() => {});
+    }
+    if (supported && s.sharedDirName) {
+      getSharedDirectoryHandle({ requestPermission: true }).then(handle => {
+        if (handle) saveSettings({ sharedDirName: handle.name, sharedLastError: '' });
+      }).catch(() => {});
+    }
     const body = `
       <div class="backup-settings">
         <label class="backup-toggle"><span>Auto Backup</span><input id="bk-enabled" type="checkbox"${s.enabled ? ' checked' : ''}><i></i></label>
         <div class="backup-folder-row">
           <div class="backup-folder-meta"><div class="backup-label">Backup Folder</div><div class="backup-folder">${folder}</div></div>
-          <button class="nav-btn" onclick="WSBackup.chooseDirectory()">Choose Folder</button>
+          <div class="backup-folder-actions">
+            ${s.dirName ? '<button class="nav-btn" onclick="WSBackup.reconnectDirectory()">Reconnect Folder</button>' : ''}
+            <button class="nav-btn" onclick="WSBackup.chooseDirectory()">Choose Folder</button>
+          </div>
+        </div>
+        <label class="backup-toggle"><span>Shared Data Sync</span><input id="bk-shared-enabled" type="checkbox"${s.sharedEnabled ? ' checked' : ''}><i></i></label>
+        <div class="backup-folder-row">
+          <div class="backup-folder-meta"><div class="backup-label">Shared Folder</div><div class="backup-folder">${sharedFolder}</div></div>
+          <div class="backup-folder-actions">
+            ${s.sharedDirName ? '<button class="nav-btn" onclick="WSBackup.reconnectSharedDirectory()">Reconnect Folder</button>' : ''}
+            <button class="nav-btn" onclick="WSBackup.chooseSharedDirectory()">Choose Shared Folder</button>
+          </div>
         </div>
         <div class="backup-grid">
           <label><span>Interval (minutes)</span><input id="bk-interval" class="ti backup-input" type="number" min="5" step="5" value="${s.intervalMinutes}"></label>
@@ -1210,11 +1718,15 @@ const WSBackup = (function () {
         </div>
         <div class="backup-status">
           <div>Last auto backup: ${esc(last)}</div>
+          <div>Last shared sync: ${esc(sharedLast)}</div>
           ${supported ? '' : '<div class="warn">Folder auto backup needs Chrome or Edge File System Access support.</div>'}
           ${s.lastAutoError ? `<div class="warn">${esc(s.lastAutoError)}</div>` : ''}
+          ${s.sharedLastError ? `<div class="warn">${esc(s.sharedLastError)}</div>` : ''}
         </div>
         <div class="backup-actions">
           <button class="fb btn-c" onclick="closeModal()">Cancel</button>
+          <button class="fb btn-c" onclick="WSBackup.readSharedNow()">Pull Shared</button>
+          <button class="fb btn-c" onclick="WSBackup.writeSharedNow()">Push Shared</button>
           <button class="fb btn-c" onclick="WSBackup.runNow()">Run Now</button>
           <button class="fb btn-s" onclick="WSBackup.saveSettingsFromModal()">Save Settings</button>
         </div>
@@ -1223,14 +1735,30 @@ const WSBackup = (function () {
   }
   function saveSettingsFromModal() {
     const enabled = !!document.getElementById('bk-enabled')?.checked;
+    const sharedEnabled = !!document.getElementById('bk-shared-enabled')?.checked;
     const intervalMinutes = Math.max(5, Number(document.getElementById('bk-interval')?.value) || DEFAULT_SETTINGS.intervalMinutes);
     const maxBackups = Math.max(1, Number(document.getElementById('bk-max')?.value) || DEFAULT_SETTINGS.maxBackups);
-    saveSettings({ enabled, intervalMinutes, maxBackups });
+    const s = settings();
+    if (sharedEnabled && !s.sharedDirName) {
+      alert('Choose a shared folder before enabling shared data sync.');
+      return false;
+    }
+    saveSettings({ enabled, sharedEnabled, intervalMinutes, maxBackups });
     closeModal();
     scheduleAutoCheck();
+    if (sharedEnabled && !s.sharedEnabled) {
+      getSharedDirectoryHandle({ requestPermission: true }).then(handle => {
+        if (handle) firstSharedEnable(handle);
+        else saveSettings({ sharedLastError: 'Shared folder permission is missing. Reconnect the folder in Backup Settings.' });
+      }).catch(() => {});
+    } else if (sharedEnabled) {
+      readSharedIfNewer('settings');
+      queueSharedWrite();
+    }
+    return true;
   }
   async function runNow() {
-    saveSettingsFromModal();
+    if (saveSettingsFromModal() === false) return;
     let handle = await getDirectoryHandle({ requestPermission: true });
     if (!handle) handle = await pickDirectoryHandle();
     if (!handle) { openSettings(); return; }
@@ -1291,13 +1819,31 @@ const WSBackup = (function () {
   function init() {
     scheduleAutoCheck();
     setTimeout(() => checkAuto('startup'), 1000);
+    setTimeout(() => readSharedIfNewer('startup'), 1200);
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) checkAuto('visible');
       else checkAuto('hidden');
+      if (!document.hidden) readSharedIfNewer('visible');
     });
+    window.addEventListener('focus', () => readSharedIfNewer('focus'));
     window.addEventListener('pagehide', () => { checkAuto('pagehide'); });
   }
-  return { exportAll, importAll, openSettings, chooseDirectory, saveSettingsFromModal, runNow, checkAuto, init };
+  return {
+    exportAll,
+    importAll,
+    openSettings,
+    chooseDirectory,
+    reconnectDirectory,
+    chooseSharedDirectory,
+    reconnectSharedDirectory,
+    saveSettingsFromModal,
+    runNow,
+    checkAuto,
+    init,
+    queueSharedWrite,
+    readSharedNow: readSharedIfNewer,
+    writeSharedNow
+  };
 })();
 
 WSBackup.init();
@@ -1390,6 +1936,18 @@ window.selectGlobalTag = selectGlobalTag;
 window.WSLinks = WSLinks;
 window.WSBackup = WSBackup;
 window.WSReminders = WSReminders;
-window.WSStorage = { setItem: safeSetLSRaw, setJSON: safeSetLSJSON, usage: estimateStorageUsage };
+window.WSStorage = {
+  setItem(key, value, options = {}) {
+    const ok = safeSetLSRaw(key, value, options);
+    if (ok && window.WSBackup && typeof WSBackup.queueSharedWrite === 'function') WSBackup.queueSharedWrite();
+    return ok;
+  },
+  setJSON(key, data, options = {}) {
+    const ok = safeSetLSJSON(key, data, options);
+    if (ok && window.WSBackup && typeof WSBackup.queueSharedWrite === 'function') WSBackup.queueSharedWrite();
+    return ok;
+  },
+  usage: estimateStorageUsage
+};
 
 
