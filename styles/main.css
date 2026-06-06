@@ -1229,7 +1229,7 @@ textarea.ti{resize:vertical;min-height:60px;line-height:1.7;}
 #page-health .hl-grid {
   width: min(var(--app-main-width), 100%);
   margin: 0 auto;
-  padding: 18px 24px 34px;
+  padding: 18px 0 34px;
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 14px;
@@ -1879,7 +1879,8 @@ textarea.ti{resize:vertical;min-height:60px;line-height:1.7;}
   .bg-toolbar,
   .gl-toolbar,
   .cl-toolbar,
-  .nt-topbar {
+  .nt-topbar,
+  #page-health .hl-toolbar {
     padding-left: max(32px, calc((100% - var(--app-main-width)) / 2));
     padding-right: max(32px, calc((100% - var(--app-main-width)) / 2));
   }

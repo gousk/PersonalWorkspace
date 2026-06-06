@@ -842,7 +842,7 @@ const HL = (function () {
     page.innerHTML = `
       <div class="hl-wrap">
         <div class="hl-toolbar">
-          <div class="hl-toolbar-title">Health</div>
+          <div class="app-title">Health</div>
           <label>Date
             <input class="ti hl-date" type="date" value="${selectedDate}" onchange="HL.setDate(this.value)">
           </label>
